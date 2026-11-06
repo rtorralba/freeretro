@@ -98,6 +98,7 @@ export function createEmptySession({
   cardsBlurred = true,
   maxVotes = 5,
   createdBy = 'Organizador',
+  coordinatorId = '',
   previousActions = []
 } = {}) {
   const tpl = TEMPLATES[templateId] || TEMPLATES.classic;
@@ -130,6 +131,7 @@ export function createEmptySession({
     title: title.trim() || 'Retrospectiva de Sprint',
     sprint: sprint.trim(),
     templateId,
+    coordinatorId,
     createdAt: now,
     updatedAt: now,
     settings: {
@@ -143,6 +145,11 @@ export function createEmptySession({
       running: false,
       durationSec: 300,
       endsAt: null,
+      updatedAt: 0
+    },
+    music: {
+      playing: false,
+      style: 'zen',
       updatedAt: 0
     },
     columns: tpl.columns.map((c, index) => ({
@@ -167,9 +174,13 @@ export function mergeSessions(local, remote) {
   const merged = structuredClone(local);
 
   // Meta fields
+  if (!merged.coordinatorId && remote.coordinatorId) {
+    merged.coordinatorId = remote.coordinatorId;
+  }
   if ((remote.updatedAt || 0) > (merged.updatedAt || 0)) {
     merged.title = remote.title || merged.title;
     merged.sprint = remote.sprint ?? merged.sprint;
+    if (remote.coordinatorId) merged.coordinatorId = remote.coordinatorId;
     merged.updatedAt = remote.updatedAt;
   }
 
@@ -181,6 +192,11 @@ export function mergeSessions(local, remote) {
   // Timer
   if ((remote.timer?.updatedAt || 0) > (merged.timer?.updatedAt || 0)) {
     merged.timer = { ...remote.timer };
+  }
+
+  // Music
+  if ((remote.music?.updatedAt || 0) > (merged.music?.updatedAt || 0)) {
+    merged.music = { ...remote.music };
   }
 
   // Columns merge by column ID
@@ -386,6 +402,7 @@ export function createInitMetadata(session) {
     t: session.title,
     s: session.sprint || '',
     tpl: session.templateId || 'classic',
+    cid: session.coordinatorId || '',
     b: session.settings?.cardsBlurred ? 1 : 0,
     mv: session.settings?.maxVotes || 5,
     cols: (session.columns || []).filter(c => !c.deleted).map(c => ({
@@ -407,6 +424,7 @@ export function createSessionFromInitMetadata(meta) {
     title: meta.t || 'Retrospectiva de Sprint',
     sprint: meta.s || '',
     templateId: meta.tpl || 'classic',
+    coordinatorId: meta.cid || 'remote-coordinator',
     createdAt: now,
     updatedAt: 1, // Low timestamp so live state overrides if modified later
     settings: {
@@ -420,6 +438,11 @@ export function createSessionFromInitMetadata(meta) {
       running: false,
       durationSec: 300,
       endsAt: null,
+      updatedAt: 0
+    },
+    music: {
+      playing: false,
+      style: 'zen',
       updatedAt: 0
     },
     columns: (meta.cols || TEMPLATES.classic.columns).map((c, idx) => ({

@@ -1,21 +1,25 @@
 /**
- * FreeRetro - P2P Collaborative Engine (WebRTC via PeerJS + BroadcastChannel)
+ * FreeRetro - Serverless P2P Collaborative Engine
  *
- * Architecture:
- * 1. Deterministic Room Hub Election:
- *    - Every room has a deterministic Hub ID: `freeretro-hub-${roomId}`.
- *    - When a user joins, they first attempt to claim the Hub ID on PeerJS.
- *    - If available, this user acts as the Room Hub (accepts connections from all peers,
- *      merges CRDT state, broadcasts updates, and shares the peer list).
- *    - If taken (`unavailable-id`), the user registers a unique client ID and connects to the Hub,
- *      plus connects directly to other peers in the room (hybrid mesh).
- *    - If the Hub disconnects, remaining peers automatically attempt to claim the Hub ID so the room stays alive!
- * 2. BroadcastChannel Fallback:
- *    - Synchronizes tabs in the same browser in 0ms even without internet.
- * 3. Automatic Offline/Pre-Session Merge:
- *    - Any cards created hours before the meeting in `localStorage` are merged automatically
- *      via CRDT `mergeSessions()` the moment two peers connect.
+ * Uses 3 transport layers without depending on `0.peerjs.com` (eliminating 429 rate-limit errors):
+ * 1. BroadcastChannel: 0ms sync between tabs in the same browser.
+ * 2. MQTT-over-WebSockets (WSS): Instant room discovery, signaling, and real-time state sync
+ *    across different browsers and networks (`broker.emqx.io` / `broker.hivemq.com`).
+ * 3. Native WebRTC (`RTCPeerConnection` + `RTCDataChannel`): Direct P2P data channels negotiated
+ *    automatically via the signaling topic.
  */
+
+const WSS_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt'
+];
+
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 
 export class RetroSyncEngine {
   constructor({
@@ -33,14 +37,16 @@ export class RetroSyncEngine {
     this.onPeersChange = onPeersChange;
     this.onStatusChange = onStatusChange;
 
-    this.hubPeerId = `freeretro-v1-hub-${this.roomId}`;
-    this.peer = null;
-    this.isHub = false;
-    this.connections = new Map(); // peerId -> DataConnection
-    this.peersInfo = new Map();   // userId -> { id, name, color, peerId, lastSeen, isSelf }
+    this.nodeId = `${this.userProfile.id}_${Math.random().toString(36).slice(2, 7)}`;
+    this.roomTopic = `freeretro/v1/room/${this.roomId}`;
+    this.signalTopic = `freeretro/v1/signal/${this.roomId}/${this.nodeId}`;
+
+    this.mqttClient = null;
+    this.mqttConnected = false;
+    this.rtcPeers = new Map();     // remoteNodeId -> { pc, dc }
+    this.peersInfo = new Map();    // userId -> { id, name, color, nodeId, lastSeen, isSelf }
     this.broadcastChannel = null;
     this.destroyed = false;
-    this.reconnectTimer = null;
     this.heartbeatTimer = null;
 
     this.registerSelfPeer();
@@ -55,7 +61,7 @@ export class RetroSyncEngine {
       id: this.userProfile.id,
       name: this.userProfile.name || 'Participante',
       color: this.userProfile.color || '#6366f1',
-      peerId: 'local',
+      nodeId: this.nodeId,
       lastSeen: Date.now(),
       isSelf: true
     });
@@ -76,16 +82,23 @@ export class RetroSyncEngine {
       id: this.userProfile.id,
       name: this.userProfile.name || 'Participante',
       color: this.userProfile.color || '#6366f1',
-      peerId: this.peer?.id || 'local',
+      nodeId: this.nodeId,
       lastSeen: Date.now()
     };
   }
 
   start() {
+    this.unloadHandler = () => this.destroy();
+    window.addEventListener('beforeunload', this.unloadHandler);
+
     this.setupBroadcastChannel();
-    this.initPeerJS(true);
+    this.initWssSignaling(0);
     this.startHeartbeat();
   }
+
+  // =========================================================================
+  // 1. BROADCAST CHANNEL (Same-browser tabs, 0ms)
+  // =========================================================================
 
   setupBroadcastChannel() {
     if (typeof BroadcastChannel === 'undefined') return;
@@ -93,199 +106,225 @@ export class RetroSyncEngine {
       this.broadcastChannel = new BroadcastChannel(`freeretro_bc_${this.roomId}`);
       this.broadcastChannel.onmessage = (event) => {
         if (this.destroyed || !event.data) return;
-        this.handleIncomingMessage(event.data, null);
+        this.handleIncomingMessage(event.data);
       };
-      // Announce presence & state to same-browser tabs immediately
       this.broadcastChannel.postMessage({
         type: 'SYNC_FULL',
         user: this.getSelfUserPayload(),
-        session: this.getLocalSession(),
-        knownPeers: []
+        session: this.getLocalSession()
       });
     } catch (e) {
       console.warn('BroadcastChannel error:', e);
     }
   }
 
-  initPeerJS(tryAsHub = true) {
+  // =========================================================================
+  // 2. WSS SIGNALING & REAL-TIME SYNC + 3. NATIVE WEBRTC DATA CHANNELS
+  // =========================================================================
+
+  initWssSignaling(brokerIndex = 0) {
     if (this.destroyed) return;
-    if (typeof window.Peer === 'undefined') {
-      this.setStatus('offline', 'Modo local (PeerJS no disponible)');
+    if (typeof window.mqtt === 'undefined') {
+      this.setStatus('offline', 'Modo local activo');
       return;
     }
 
-    this.cleanupPeerInstance();
-    this.setStatus('connecting', 'Conectando P2P...');
-
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const targetId = tryAsHub
-      ? this.hubPeerId
-      : `freeretro-v1-peer-${this.roomId}-${randomSuffix}`;
+    this.setStatus('connecting', 'Conectando sala P2P...');
+    const brokerUrl = WSS_BROKERS[brokerIndex % WSS_BROKERS.length];
 
     try {
-      const peer = new window.Peer(targetId, {
-        debug: 0,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' }
-          ]
-        }
+      const client = window.mqtt.connect(brokerUrl, {
+        clientId: `fr_${this.nodeId}`,
+        clean: true,
+        connectTimeout: 5000,
+        reconnectPeriod: 6000
       });
 
-      this.peer = peer;
+      this.mqttClient = client;
 
-      peer.on('open', (id) => {
-        if (this.destroyed) return;
-        this.isHub = (id === this.hubPeerId);
-        this.registerSelfPeer();
-
-        if (this.isHub) {
-          this.setStatus('online', 'Sala P2P activa (Coordinador)');
-        } else {
-          this.setStatus('online', 'Conectado a sala P2P');
-          this.connectToPeer(this.hubPeerId);
-        }
-      });
-
-      peer.on('connection', (conn) => {
-        this.setupConnection(conn);
-      });
-
-      peer.on('error', (err) => {
-        if (this.destroyed) return;
-        if (err.type === 'unavailable-id' && tryAsHub) {
-          // Someone else is already the Hub for this room! Connect as a regular peer.
-          this.initPeerJS(false);
+      client.on('connect', () => {
+        if (this.destroyed) {
+          client.end(true);
           return;
         }
-        if (err.type === 'peer-unavailable') {
-          // If we tried connecting to the Hub and it's gone, try becoming the Hub!
-          if (!this.isHub && !this.connections.has(this.hubPeerId)) {
-            this.scheduleHubPromotion();
+        this.mqttConnected = true;
+        this.setStatus('online', 'Sala P2P activa');
+
+        // Subscribe to room broadcast topic and our direct WebRTC signaling inbox
+        client.subscribe([this.roomTopic, this.signalTopic], { qos: 0 }, (err) => {
+          if (!err && !this.destroyed) {
+            this.publishWss(this.roomTopic, {
+              type: 'SYNC_FULL',
+              user: this.getSelfUserPayload(),
+              session: this.getLocalSession()
+            });
           }
-          return;
-        }
-        console.warn('PeerJS notice:', err.type, err.message);
-        if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
-          this.setStatus('reconnecting', 'Reconectando P2P...');
-          this.scheduleReconnect();
+        });
+      });
+
+      client.on('message', (topic, payloadBuffer) => {
+        if (this.destroyed) return;
+        try {
+          const msg = JSON.parse(payloadBuffer.toString());
+          if (!msg || msg.user?.nodeId === this.nodeId) return;
+
+          if (topic === this.signalTopic) {
+            this.handleWebRtcSignal(msg);
+          } else if (topic === this.roomTopic) {
+            this.handleIncomingMessage(msg, true);
+          }
+        } catch (e) {
+          // Ignore malformed packet
         }
       });
 
-      peer.on('disconnected', () => {
+      client.on('error', () => {
         if (this.destroyed) return;
-        this.setStatus('reconnecting', 'Reconectando...');
-        try {
-          peer.reconnect();
-        } catch (e) {
-          this.scheduleReconnect();
+        if (!this.mqttConnected && brokerIndex + 1 < WSS_BROKERS.length) {
+          try { client.end(true); } catch (e) {}
+          this.initWssSignaling(brokerIndex + 1);
         }
       });
     } catch (e) {
-      console.warn('Failed to initialize PeerJS:', e);
       this.setStatus('offline', 'Guardado local activo');
     }
   }
 
-  scheduleHubPromotion() {
-    clearTimeout(this.reconnectTimer);
-    // Random jitter (400-1200ms) so multiple peers don't collide at the exact millisecond
-    const delay = 400 + Math.floor(Math.random() * 800);
-    this.reconnectTimer = setTimeout(() => {
-      if (!this.destroyed && !this.isHub && !this.connections.has(this.hubPeerId)) {
-        this.initPeerJS(true);
-      }
-    }, delay);
+  publishWss(topic, payload) {
+    if (!this.mqttClient || !this.mqttConnected || this.destroyed) return;
+    try {
+      this.mqttClient.publish(topic, JSON.stringify(payload), { qos: 0 });
+    } catch (e) {}
   }
 
-  scheduleReconnect() {
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      if (!this.destroyed) {
-        this.initPeerJS(true);
-      }
-    }, 4000);
-  }
-
-  connectToPeer(remotePeerId) {
+  /**
+   * Initiates a direct native WebRTC DataChannel with a discovered peer
+   * (Deterministic initiator: node with lexicographically larger nodeId initiates)
+   */
+  ensureWebRtcConnection(remoteNodeId) {
     if (
       this.destroyed ||
-      !this.peer ||
-      !this.peer.open ||
-      !remotePeerId ||
-      remotePeerId === 'local' ||
-      remotePeerId === this.peer.id ||
-      this.connections.has(remotePeerId)
+      !remoteNodeId ||
+      remoteNodeId === this.nodeId ||
+      this.rtcPeers.has(remoteNodeId) ||
+      typeof RTCPeerConnection === 'undefined'
     ) {
       return;
     }
 
-    try {
-      const conn = this.peer.connect(remotePeerId, { reliable: true });
-      this.setupConnection(conn);
-    } catch (e) {
-      console.warn('Could not connect to peer:', remotePeerId, e);
-    }
-  }
+    // Only one side initiates the offer to avoid glare
+    if (this.nodeId < remoteNodeId) return;
 
-  setupConnection(conn) {
-    if (!conn) return;
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    const dc = pc.createDataChannel('freeretro', { ordered: true });
+    this.setupDataChannel(remoteNodeId, pc, dc);
 
-    conn.on('open', () => {
-      if (this.destroyed) {
-        conn.close();
-        return;
-      }
-      this.connections.set(conn.peer, conn);
-      this.setStatus('online', `P2P sincronizado (${this.connections.size + 1} en línea)`);
-
-      // Immediately exchange full CRDT state + known peer list
-      conn.send({
-        type: 'SYNC_FULL',
-        user: this.getSelfUserPayload(),
-        session: this.getLocalSession(),
-        knownPeers: Array.from(this.connections.keys())
-      });
-    });
-
-    conn.on('data', (data) => {
-      if (this.destroyed || !data) return;
-      this.handleIncomingMessage(data, conn);
-    });
-
-    const handleClose = () => {
-      this.connections.delete(conn.peer);
-      // Remove peer info associated with this peerId
-      for (const [uid, info] of this.peersInfo.entries()) {
-        if (!info.isSelf && info.peerId === conn.peer) {
-          this.peersInfo.delete(uid);
-        }
-      }
-      this.emitPeers();
-
-      if (!this.destroyed) {
-        if (conn.peer === this.hubPeerId && !this.isHub) {
-          // Hub disconnected; try to become the new Hub
-          this.scheduleHubPromotion();
-        } else {
-          this.setStatus(
-            'online',
-            this.connections.size > 0
-              ? `P2P sincronizado (${this.connections.size + 1} en línea)`
-              : 'Sala P2P lista'
-          );
-        }
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        this.publishWss(`freeretro/v1/signal/${this.roomId}/${remoteNodeId}`, {
+          type: 'RTC_ICE',
+          user: this.getSelfUserPayload(),
+          candidate: e.candidate
+        });
       }
     };
 
-    conn.on('close', handleClose);
-    conn.on('error', handleClose);
+    pc.createOffer()
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => {
+        this.publishWss(`freeretro/v1/signal/${this.roomId}/${remoteNodeId}`, {
+          type: 'RTC_OFFER',
+          user: this.getSelfUserPayload(),
+          sdp: pc.localDescription
+        });
+      })
+      .catch(() => {});
   }
 
-  handleIncomingMessage(msg, sourceConn) {
+  async handleWebRtcSignal(msg) {
+    const remoteNodeId = msg.user?.nodeId;
+    if (!remoteNodeId || typeof RTCPeerConnection === 'undefined') return;
+
+    try {
+      if (msg.type === 'RTC_OFFER') {
+        const pc = new RTCPeerConnection(RTC_CONFIG);
+        pc.ondatachannel = (event) => {
+          this.setupDataChannel(remoteNodeId, pc, event.channel);
+        };
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            this.publishWss(`freeretro/v1/signal/${this.roomId}/${remoteNodeId}`, {
+              type: 'RTC_ICE',
+              user: this.getSelfUserPayload(),
+              candidate: e.candidate
+            });
+          }
+        };
+        this.rtcPeers.set(remoteNodeId, { pc, dc: null });
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        this.publishWss(`freeretro/v1/signal/${this.roomId}/${remoteNodeId}`, {
+          type: 'RTC_ANSWER',
+          user: this.getSelfUserPayload(),
+          sdp: pc.localDescription
+        });
+      } else if (msg.type === 'RTC_ANSWER') {
+        const entry = this.rtcPeers.get(remoteNodeId);
+        if (entry?.pc && entry.pc.signalingState === 'have-local-offer') {
+          await entry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        }
+      } else if (msg.type === 'RTC_ICE') {
+        const entry = this.rtcPeers.get(remoteNodeId);
+        if (entry?.pc && msg.candidate) {
+          await entry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+        }
+      }
+    } catch (e) {
+      // Ignore transient WebRTC negotiation errors
+    }
+  }
+
+  setupDataChannel(remoteNodeId, pc, dc) {
+    this.rtcPeers.set(remoteNodeId, { pc, dc });
+
+    dc.onopen = () => {
+      if (this.destroyed) {
+        dc.close();
+        return;
+      }
+      try {
+        dc.send(JSON.stringify({
+          type: 'SYNC_FULL',
+          isReply: true,
+          user: this.getSelfUserPayload(),
+          session: this.getLocalSession()
+        }));
+      } catch (e) {}
+    };
+
+    dc.onmessage = (event) => {
+      if (this.destroyed || !event.data) return;
+      try {
+        const msg = JSON.parse(event.data);
+        this.handleIncomingMessage(msg, false);
+      } catch (e) {}
+    };
+
+    const cleanup = () => {
+      this.rtcPeers.delete(remoteNodeId);
+      try { pc.close(); } catch (e) {}
+    };
+
+    dc.onclose = cleanup;
+    dc.onerror = cleanup;
+  }
+
+  // =========================================================================
+  // MESSAGE HANDLING & BROADCASTING
+  // =========================================================================
+
+  handleIncomingMessage(msg, fromWss = false) {
     if (!msg || !msg.type) return;
 
     if (msg.user && msg.user.id && msg.user.id !== this.userProfile.id) {
@@ -295,6 +334,11 @@ export class RetroSyncEngine {
         isSelf: false
       });
       this.emitPeers();
+      this.setStatus('online', `P2P sincronizado (${this.peersInfo.size} en línea)`);
+
+      if (msg.user.nodeId) {
+        this.ensureWebRtcConnection(msg.user.nodeId);
+      }
     }
 
     if (msg.type === 'SYNC_FULL' || msg.type === 'STATE_UPDATE') {
@@ -302,61 +346,27 @@ export class RetroSyncEngine {
         this.onRemoteState(msg.session);
       }
 
-      // Connect to any additional peers shared by the Hub (mesh resilience)
-      if (Array.isArray(msg.knownPeers)) {
-        msg.knownPeers.forEach(pid => this.connectToPeer(pid));
-      }
-
-      // If we are the Hub and received an update from one peer, relay it to other connected peers
-      if (this.isHub && sourceConn) {
-        const relayPayload = {
-          type: 'STATE_UPDATE',
-          user: msg.user,
-          session: this.getLocalSession(),
-          knownPeers: Array.from(this.connections.keys())
-        };
-        for (const [peerId, conn] of this.connections.entries()) {
-          if (peerId !== sourceConn.peer && conn.open) {
-            conn.send(relayPayload);
-          }
-        }
-      }
-
-      // Also reply with our merged state on initial SYNC_FULL if needed
       if (msg.type === 'SYNC_FULL' && !msg.isReply) {
         const reply = {
           type: 'SYNC_FULL',
           isReply: true,
           user: this.getSelfUserPayload(),
-          session: this.getLocalSession(),
-          knownPeers: Array.from(this.connections.keys())
+          session: this.getLocalSession()
         };
-        if (sourceConn && sourceConn.open) {
-          sourceConn.send(reply);
+        if (fromWss) {
+          this.publishWss(this.roomTopic, reply);
         } else if (this.broadcastChannel) {
           this.broadcastChannel.postMessage(reply);
-        }
-      }
-    } else if (msg.type === 'PEER_ANNOUNCE') {
-      if (this.isHub && sourceConn) {
-        for (const [peerId, conn] of this.connections.entries()) {
-          if (peerId !== sourceConn.peer && conn.open) {
-            conn.send(msg);
-          }
         }
       }
     }
   }
 
-  /**
-   * Broadcast current session state to all connected WebRTC peers & local tabs
-   */
   broadcastState() {
     const payload = {
       type: 'STATE_UPDATE',
       user: this.getSelfUserPayload(),
-      session: this.getLocalSession(),
-      knownPeers: Array.from(this.connections.keys())
+      session: this.getLocalSession()
     };
     this.broadcastMessage(payload);
   }
@@ -364,23 +374,23 @@ export class RetroSyncEngine {
   broadcastMessage(payload) {
     if (this.destroyed) return;
 
-    // 1. Send via BroadcastChannel (same browser tabs)
+    // 1. Same-browser tabs
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage(payload);
-      } catch (e) {
-        // Ignore
-      }
+      } catch (e) {}
     }
 
-    // 2. Send via WebRTC DataConnections
-    for (const conn of this.connections.values()) {
-      if (conn && conn.open) {
+    // 2. WSS room topic
+    this.publishWss(this.roomTopic, payload);
+
+    // 3. Direct WebRTC DataChannels
+    const serialized = JSON.stringify(payload);
+    for (const { dc } of this.rtcPeers.values()) {
+      if (dc && dc.readyState === 'open') {
         try {
-          conn.send(payload);
-        } catch (e) {
-          console.warn('Error sending to peer:', e);
-        }
+          dc.send(serialized);
+        } catch (e) {}
       }
     }
   }
@@ -402,16 +412,10 @@ export class RetroSyncEngine {
       }
       if (changed) this.emitPeers();
 
-      // Send lightweight heartbeat
       this.broadcastMessage({
         type: 'PEER_ANNOUNCE',
         user: this.getSelfUserPayload()
       });
-
-      // If we are not the Hub and have no connection to the Hub, periodically retry
-      if (!this.isHub && this.peer?.open && !this.connections.has(this.hubPeerId)) {
-        this.connectToPeer(this.hubPeerId);
-      }
     }, 8000);
   }
 
@@ -422,31 +426,34 @@ export class RetroSyncEngine {
   }
 
   setStatus(state, label) {
+    if (this.lastLogLabel !== label) {
+      this.lastLogLabel = label;
+      console.info(`[FreeRetro P2P] (${state}) ${label}`);
+    }
     if (this.onStatusChange) {
-      this.onStatusChange({ state, label, peerCount: this.peersInfo.size, isHub: this.isHub });
-    }
-  }
-
-  cleanupPeerInstance() {
-    for (const conn of this.connections.values()) {
-      try { conn.close(); } catch (e) {}
-    }
-    this.connections.clear();
-    if (this.peer) {
-      try { this.peer.destroy(); } catch (e) {}
-      this.peer = null;
+      this.onStatusChange({ state, label, peerCount: this.peersInfo.size });
     }
   }
 
   destroy() {
     this.destroyed = true;
-    clearTimeout(this.reconnectTimer);
+    if (this.unloadHandler) {
+      window.removeEventListener('beforeunload', this.unloadHandler);
+      this.unloadHandler = null;
+    }
     clearInterval(this.heartbeatTimer);
     if (this.broadcastChannel) {
       try { this.broadcastChannel.close(); } catch (e) {}
       this.broadcastChannel = null;
     }
-    this.cleanupPeerInstance();
+    if (this.mqttClient) {
+      try { this.mqttClient.end(true); } catch (e) {}
+      this.mqttClient = null;
+    }
+    for (const { pc, dc } of this.rtcPeers.values()) {
+      try { dc?.close(); } catch (e) {}
+      try { pc?.close(); } catch (e) {}
+    }
+    this.rtcPeers.clear();
   }
 }
-

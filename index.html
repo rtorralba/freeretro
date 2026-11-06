@@ -11,8 +11,8 @@
   <link rel="stylesheet" href="./css/styles.css" />
   <!-- LZString for compact URL state & snapshot links -->
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js" defer></script>
-  <!-- PeerJS for Serverless WebRTC P2P real-time collaboration -->
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
+  <!-- MQTT over WebSockets for serverless WebRTC signaling & room sync -->
+  <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js" defer></script>
   <script type="module" src="./js/app.js"></script>
 </head>
 <body>
@@ -30,7 +30,7 @@
       <div id="peers-avatars" class="peers-avatars"></div>
       <div id="sync-status-pill" class="sync-pill status-connecting">
         <span class="status-dot"></span>
-        <span>Conectando...</span>
+        <span>Sala P2P</span>
       </div>
     </div>
 
@@ -212,6 +212,16 @@
           </select>
           <span id="timer-display" class="timer-digits">05:00</span>
           <button id="btn-timer-toggle" class="timer-btn" title="Iniciar/Pausar temporizador">▶</button>
+        </div>
+
+        <div id="music-widget" class="timer-widget music-widget" title="Música ambiental relajante (CC0)">
+          <select id="music-style-select" aria-label="Estilo de música relajante">
+            <option value="zen" selected>🎵 Zen</option>
+            <option value="bowls">🥣 Cuencos</option>
+            <option value="rain">🌧️ Lluvia</option>
+          </select>
+          <button id="btn-music-toggle" class="timer-btn" title="Iniciar/Detener música relajante">▶</button>
+          <button id="btn-music-mute" class="timer-btn hidden" title="Silenciar música en mi navegador">🔊</button>
         </div>
 
         <button id="btn-toggle-blur" class="btn btn-secondary btn-sm">

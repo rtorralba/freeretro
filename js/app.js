@@ -23,12 +23,14 @@ import {
 } from './storage.js';
 
 import { RetroSyncEngine } from './sync.js';
+import { AmbientMusicEngine } from './audio.js';
 
 class FreeRetroApp {
   constructor() {
     this.user = getUserProfile();
     this.currentSession = null;
     this.syncEngine = null;
+    this.musicEngine = new AmbientMusicEngine();
     this.peers = [];
     this.syncStatus = { state: 'offline', label: 'Modo local', peerCount: 1 };
     this.timerInterval = null;
@@ -144,7 +146,8 @@ class FreeRetroApp {
     if (!localSession) {
       localSession = createEmptySession({
         id: roomId,
-        title: `Retro ${roomId.replace(/^retro-/, '')}`
+        title: `Retro ${roomId.replace(/^retro-/, '')}`,
+        coordinatorId: this.user.id
       });
       saveSession(localSession);
     }
@@ -157,6 +160,7 @@ class FreeRetroApp {
       this.syncEngine.destroy();
       this.syncEngine = null;
     }
+    this.musicEngine.stop(true);
     clearInterval(this.timerInterval);
     this.currentSession = null;
 
@@ -169,6 +173,10 @@ class FreeRetroApp {
   }
 
   openSessionBoard(session) {
+    // Backfill coordinatorId for sessions created locally before coordinatorId was introduced
+    if (!session.coordinatorId) {
+      session.coordinatorId = this.user.id;
+    }
     this.currentSession = session;
     saveSession(this.currentSession);
 
@@ -198,6 +206,7 @@ class FreeRetroApp {
         this.syncStatus = statusObj;
         this.renderSyncStatus();
         this.renderTimerDisplay();
+        this.renderMusicControls();
       }
     });
 
@@ -394,8 +403,9 @@ class FreeRetroApp {
       sortBtn.classList.toggle('active', this.sortByVotes);
     }
 
-    // Render Timer display
+    // Render Timer & Music display
     this.renderTimerDisplay();
+    this.renderMusicControls();
 
     // Render Columns & Cards
     const columnsContainer = document.getElementById('board-columns');
@@ -602,17 +612,12 @@ class FreeRetroApp {
     const el = document.getElementById('sync-status-pill');
     if (!el) return;
     el.className = `sync-pill status-${this.syncStatus.state}`;
-    el.innerHTML = `<span class="status-dot"></span> <span>${this.escapeHtml(this.syncStatus.label)}</span>`;
+    el.title = this.syncStatus.label || 'Sala P2P';
   }
 
   // =========================================================================
   // SYNCHRONIZED COUNTDOWN TIMER
   // =========================================================================
-
-  isCoordinator() {
-    if (!this.syncEngine) return true;
-    return Boolean(this.syncEngine.isHub || this.syncStatus.state === 'offline');
-  }
 
   startTimerLoop() {
     clearInterval(this.timerInterval);
@@ -624,27 +629,19 @@ class FreeRetroApp {
   renderTimerDisplay() {
     const display = document.getElementById('timer-display');
     const toggleBtn = document.getElementById('btn-timer-toggle');
-    const presetSelect = document.getElementById('timer-preset-select');
-    const widget = display?.closest('.timer-widget');
     if (!display || !this.currentSession) return;
 
-    const canControl = this.isCoordinator();
     const timer = this.currentSession.timer || { running: false, durationSec: 300, endsAt: null };
     let remainingSec = timer.durationSec || 300;
 
     if (timer.running && timer.endsAt) {
       remainingSec = Math.max(0, Math.ceil((timer.endsAt - Date.now()) / 1000));
       if (remainingSec === 0) {
-        if (canControl) {
-          this.updateSession(s => {
-            s.timer.running = false;
-            s.timer.endsAt = null;
-            s.timer.updatedAt = Date.now();
-          });
-        } else {
-          timer.running = false;
-          timer.endsAt = null;
-        }
+        this.updateSession(s => {
+          s.timer.running = false;
+          s.timer.endsAt = null;
+          s.timer.updatedAt = Date.now();
+        });
         this.showToast('⏰ ¡Tiempo terminado!');
       }
     }
@@ -654,20 +651,52 @@ class FreeRetroApp {
     display.textContent = `${mins}:${secs}`;
     display.classList.toggle('timer-running', Boolean(timer.running));
 
-    if (presetSelect) {
-      presetSelect.classList.toggle('hidden', !canControl);
-    }
-
     if (toggleBtn) {
-      toggleBtn.classList.toggle('hidden', !canControl);
       toggleBtn.textContent = timer.running ? '⏸' : '▶';
       toggleBtn.title = timer.running ? 'Pausar temporizador' : 'Iniciar temporizador para todos';
     }
+  }
+
+  renderMusicControls() {
+    if (!this.currentSession) return;
+    const music = this.currentSession.music || { playing: false, style: 'zen' };
+
+    // Synchronize Web Audio synthesizer with room state
+    if (music.playing) {
+      this.musicEngine.setStyle(music.style || 'zen');
+      if (!this.musicEngine.isPlaying) {
+        this.musicEngine.start(music.style || 'zen');
+      }
+    } else if (this.musicEngine.isPlaying) {
+      this.musicEngine.stop();
+    }
+
+    const styleSelect = document.getElementById('music-style-select');
+    const toggleBtn = document.getElementById('btn-music-toggle');
+    const muteBtn = document.getElementById('btn-music-mute');
+    const widget = document.getElementById('music-widget');
+
+    if (styleSelect) {
+      styleSelect.value = music.style || 'zen';
+    }
+
+    if (toggleBtn) {
+      toggleBtn.textContent = music.playing ? '⏹' : '▶';
+      toggleBtn.title = music.playing
+        ? 'Detener música relajante para la sala'
+        : 'Iniciar música relajante CC0 para la sala';
+    }
+
+    if (muteBtn) {
+      muteBtn.classList.toggle('hidden', !music.playing);
+      muteBtn.textContent = this.musicEngine.isLocallyMuted ? '🔇' : '🔊';
+      muteBtn.title = this.musicEngine.isLocallyMuted
+        ? 'Activar sonido de música en mi navegador'
+        : 'Silenciar música en mi navegador';
+    }
 
     if (widget) {
-      widget.title = canControl
-        ? 'Temporizador sincronizado (Eres el coordinador: puedes iniciarlo o pausarlo)'
-        : 'Temporizador sincronizado (Controlado por el coordinador de la sala)';
+      widget.classList.toggle('music-active', Boolean(music.playing));
     }
   }
 
@@ -760,6 +789,7 @@ class FreeRetroApp {
         cardsBlurred,
         maxVotes,
         createdBy: this.user.name,
+        coordinatorId: this.user.id,
         previousActions
       });
 
@@ -904,13 +934,9 @@ class FreeRetroApp {
       });
     });
 
-    // Timer controls (only Coordinator can start/stop/change duration)
+    // Timer controls
     document.getElementById('btn-timer-toggle')?.addEventListener('click', () => {
       if (!this.currentSession) return;
-      if (!this.isCoordinator()) {
-        this.showToast('Solo el coordinador de la sala puede controlar el temporizador', true);
-        return;
-      }
       this.updateSession(s => {
         if (s.timer.running) {
           const left = Math.max(0, Math.ceil((s.timer.endsAt - Date.now()) / 1000));
@@ -928,10 +954,6 @@ class FreeRetroApp {
     });
 
     document.getElementById('timer-preset-select')?.addEventListener('change', (e) => {
-      if (!this.isCoordinator()) {
-        this.showToast('Solo el coordinador de la sala puede cambiar el tiempo', true);
-        return;
-      }
       const sec = Number(e.target.value) || 300;
       this.updateSession(s => {
         s.timer.running = false;
@@ -939,6 +961,31 @@ class FreeRetroApp {
         s.timer.endsAt = null;
         s.timer.updatedAt = Date.now();
       });
+    });
+
+    // Relaxing CC0 Music controls
+    document.getElementById('btn-music-toggle')?.addEventListener('click', () => {
+      if (!this.currentSession) return;
+      this.updateSession(s => {
+        s.music = s.music || { playing: false, style: 'zen', updatedAt: 0 };
+        s.music.playing = !s.music.playing;
+        s.music.updatedAt = Date.now();
+      });
+    });
+
+    document.getElementById('music-style-select')?.addEventListener('change', (e) => {
+      if (!this.currentSession) return;
+      const nextStyle = e.target.value || 'zen';
+      this.updateSession(s => {
+        s.music = s.music || { playing: false, style: 'zen', updatedAt: 0 };
+        s.music.style = nextStyle;
+        s.music.updatedAt = Date.now();
+      });
+    });
+
+    document.getElementById('btn-music-mute')?.addEventListener('click', () => {
+      this.musicEngine.toggleLocalMute();
+      this.renderMusicControls();
     });
 
     // Delegated clicks across the page

@@ -706,6 +706,16 @@ select option {
   font-size: 0.7rem;
 }
 
+.music-widget.music-active {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.music-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
 .peers-cluster {
   display: flex;
   align-items: center;
@@ -740,10 +750,8 @@ select option {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  width: 245px;
   flex-shrink: 0;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
   font-weight: 600;
   padding: 4px 12px;

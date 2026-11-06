@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FreeRetro — Retrospectivas Colaborativas P2P</title>
+  <meta name="description" content="Herramienta colaborativa P2P para retrospectivas ágiles alojable en GitHub Pages. Sin servidores, con preparación previa e historial de sesiones." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./css/styles.css" />
+  <!-- LZString for compact URL state & snapshot links -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js" defer></script>
+  <!-- PeerJS for Serverless WebRTC P2P real-time collaboration -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
+  <script type="module" src="./js/app.js"></script>
+</head>
+<body>
+  <!-- TOP NAVIGATION BAR -->
+  <header class="app-navbar">
+    <div class="navbar-left">
+      <a href="#" class="brand-logo" title="Ir al inicio y sesiones guardadas">
+        <span class="logo-badge">🔄</span>
+        <span class="logo-text">Free<strong>Retro</strong></span>
+        <span class="p2p-tag">P2P · GitHub Pages</span>
+      </a>
+    </div>
+
+    <div class="navbar-right">
+      <button id="user-profile-btn" class="user-profile-pill" title="Cambiar tu nombre y color">
+        <!-- Populated by JS -->
+      </button>
+      <button id="btn-theme-toggle" class="icon-button" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema">
+        <!-- Populated by JS -->
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 1: DASHBOARD (CREATE / JOIN / PAST SESSIONS HISTORY)             -->
+  <!-- ===================================================================== -->
+  <main id="dashboard-view" class="dashboard-container">
+    <section class="hero-banner">
+      <h1>Retrospectivas en equipo, <span class="gradient-text">sin servidores ni cuentas</span></h1>
+      <p>
+        Crea una sala antes de la reunión, comparte el enlace para que cada participante prepare sus tarjetas por adelantado y colabora en tiempo real vía WebRTC P2P.
+      </p>
+    </section>
+
+    <div class="dashboard-grid">
+      <!-- CREATE NEW SESSION CARD -->
+      <div class="panel-card">
+        <div class="panel-header">
+          <h2>✨ Inicializar Nueva Retrospectiva</h2>
+          <p>Configura el tablero hoy y comparte el enlace para que el equipo vaya añadiendo sus tarjetas antes de la sesión.</p>
+        </div>
+
+        <form id="create-session-form" class="stacked-form">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="create-title">Título de la sesión</label>
+              <input type="text" id="create-title" placeholder="Ej. Retrospectiva Equipo Core" value="Retrospectiva de Sprint" required />
+            </div>
+            <div class="form-group">
+              <label for="create-sprint">Sprint / Iteración (opcional)</label>
+              <input type="text" id="create-sprint" placeholder="Ej. Sprint 42 - Q4" />
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="create-template">Plantilla de columnas</label>
+              <select id="create-template">
+                <option value="classic">Clásica (Seguir haciendo, Dejar de hacer, Empezar, Acciones)</option>
+                <option value="fourLs">Las 4 Ls (Liked, Learned, Lacked, Longed For + Acciones)</option>
+                <option value="madSadGlad">Mad, Sad, Glad (Emocional + Acciones)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="create-max-votes">Votos máximos por persona</label>
+              <input type="number" id="create-max-votes" min="1" max="20" value="5" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="create-import-actions">Importar acciones pendientes de una sesión anterior</label>
+            <select id="create-import-actions">
+              <option value="">No importar acciones anteriores</option>
+            </select>
+          </div>
+
+          <label class="checkbox-card">
+            <input type="checkbox" id="create-blur" checked />
+            <div>
+              <strong>Modo oculto inicial (Recomendado para preparar antes)</strong>
+              <span>Las tarjetas de otros compañeros se verán borrosas hasta que pulses "Revelar tarjetas" durante la reunión.</span>
+            </div>
+          </label>
+
+          <button type="submit" class="btn btn-primary btn-lg full-width">
+            🚀 Crear e Inicializar Sala
+          </button>
+        </form>
+      </div>
+
+      <!-- SIDEBAR: JOIN & HOW IT WORKS -->
+      <div class="side-stack">
+        <div class="panel-card">
+          <div class="panel-header">
+            <h2>🔗 Unirse a una Sala</h2>
+            <p>Introduce el código o pega el enlace que te han compartido.</p>
+          </div>
+          <form id="join-session-form" class="inline-join-form">
+            <input type="text" id="join-room-input" placeholder="ID de sala o enlace #room=..." required />
+            <button type="submit" class="btn btn-secondary">Entrar</button>
+          </form>
+        </div>
+
+        <div class="panel-card info-steps-card">
+          <h3>💡 ¿Cómo funciona la preparación previa + P2P?</h3>
+          <ol class="steps-list">
+            <li>
+              <strong>1. Inicializa antes:</strong> Crea la sala y pasa el enlace por Slack/Teams horas o días antes.
+            </li>
+            <li>
+              <strong>2. Añade tarjetas cuando quieras:</strong> Cada persona entra al enlace y escribe sus tarjetas; se guardan en su navegador.
+            </li>
+            <li>
+              <strong>3. Fusión automática en la reunión:</strong> Al coincidir con la pestaña abierta (o enviando el enlace con instantánea), todas las tarjetas de todos se unen sin perder ninguna.
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAST SESSIONS HISTORY SECTION -->
+    <section class="history-section panel-card">
+      <div class="history-header">
+        <div class="history-title-wrap">
+          <h2>📚 Historial de Sesiones Anteriores</h2>
+          <span id="history-count-badge" class="badge-pill">0</span>
+        </div>
+
+        <div class="history-toolbar">
+          <input
+            type="search"
+            id="history-search-input"
+            class="search-input"
+            placeholder="Buscar por título o sprint..."
+          />
+          <label class="btn btn-secondary btn-sm file-upload-btn" title="Importar sesión desde un archivo JSON">
+            📂 Importar JSON
+            <input type="file" id="import-json-input" accept=".json,application/json" hidden />
+          </label>
+        </div>
+      </div>
+
+      <div id="history-list" class="history-list">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- VIEW 2: ACTIVE RETROSPECTIVE BOARD                                    -->
+  <!-- ===================================================================== -->
+  <main id="board-view" class="board-container hidden">
+    <!-- BOARD SUBHEADER / CONTROLS -->
+    <div class="board-toolbar">
+      <div class="toolbar-left">
+        <button id="btn-back-dashboard" class="btn btn-ghost btn-sm" title="Volver al historial de sesiones">
+          ← Sesiones
+        </button>
+        <div class="board-title-group">
+          <h2 id="board-title">Retrospectiva</h2>
+          <span id="board-sprint" class="sprint-tag"></span>
+        </div>
+      </div>
+
+      <!-- PHASE WORKFLOW STEPPER -->
+      <div class="phase-stepper" role="group" aria-label="Fase de la retrospectiva">
+        <button class="phase-step active" data-phase="write" title="Fase 1: Escribir tarjetas (privado)">
+          1. Escribir
+        </button>
+        <button class="phase-step" data-phase="group" title="Fase 2: Revelar tarjetas y agrupar temas">
+          2. Revelar y Discutir
+        </button>
+        <button class="phase-step" data-phase="vote" title="Fase 3: Votar las tarjetas prioritarias">
+          3. Votar
+        </button>
+        <button class="phase-step" data-phase="actions" title="Fase 4: Definir el Plan de Acción">
+          4. Acciones
+        </button>
+      </div>
+
+      <!-- RIGHT CONTROLS: TIMER, BLUR, PEERS, SHARE -->
+      <div class="toolbar-right">
+        <div class="timer-widget" title="Temporizador sincronizado entre todos los participantes">
+          <select id="timer-preset-select" aria-label="Duración del temporizador">
+            <option value="180">3m</option>
+            <option value="300" selected>5m</option>
+            <option value="600">10m</option>
+            <option value="900">15m</option>
+          </select>
+          <span id="timer-display" class="timer-digits">05:00</span>
+          <button id="btn-timer-toggle" class="timer-btn" title="Iniciar/Pausar temporizador">▶</button>
+        </div>
+
+        <button id="btn-toggle-blur" class="btn btn-secondary btn-sm">
+          🙈 Tarjetas Ocultas
+        </button>
+
+        <button id="btn-sort-votes" class="btn btn-ghost btn-sm" title="Ordenar tarjetas por número de votos">
+          🔥 Más votadas
+        </button>
+
+        <button id="btn-add-column" class="btn btn-ghost btn-sm" title="Añadir una nueva columna al tablero">
+          + Columna
+        </button>
+
+        <div class="peers-cluster">
+          <div id="peers-avatars" class="peers-avatars"></div>
+          <div id="sync-status-pill" class="sync-pill status-connecting">
+            <span class="status-dot"></span>
+            <span>Conectando...</span>
+          </div>
+        </div>
+
+        <button id="btn-open-share" class="btn btn-primary btn-sm">
+          🔗 Compartir / Exportar
+        </button>
+      </div>
+    </div>
+
+    <!-- INFO BANNER (BLUR / VOTING STATUS) -->
+    <div id="board-info-banner" class="board-info-banner"></div>
+
+    <!-- RETRO COLUMNS GRID -->
+    <div id="board-columns" class="board-columns-grid">
+      <!-- Populated dynamically by JS -->
+    </div>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: SHARE, ASYNC CONTRIBUTION & EXPORT                             -->
+  <!-- ===================================================================== -->
+  <div id="share-modal" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>🔗 Compartir Sala, Preparación Previa y Exportación</h3>
+        <button class="icon-btn" data-close-modal="true">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="share-box">
+          <h4>1. Enlace de invitación a la sala (Para preparar antes y colaborar en vivo)</h4>
+          <p class="share-desc">
+            Comparte este enlace con el equipo antes de la reunión. Podrán entrar, añadir sus tarjetas por adelantado y, cuando coincidan en la sesión, todas las tarjetas se sincronizarán solas vía P2P.
+          </p>
+          <div class="copy-input-group">
+            <input type="text" id="share-invite-url" readonly />
+            <button id="btn-copy-invite" class="btn btn-primary">Copiar enlace</button>
+          </div>
+        </div>
+
+        <div class="share-box highlight-box">
+          <h4>2. Enlace con instantánea completa (Archivo permanente o envío asíncrono)</h4>
+          <p class="share-desc">
+            Este enlace lleva <strong>todas las tarjetas actuales comprimidas dentro de la propia URL</strong>. Úsalo si alguien escribió sus tarjetas antes y no podrá asistir a la reunión, o al finalizar la retro para guardar el enlace en Jira/Notion/Slack.
+          </p>
+          <div class="copy-input-group">
+            <input type="text" id="share-snapshot-url" readonly />
+            <button id="btn-copy-snapshot" class="btn btn-secondary">Copiar instantánea</button>
+          </div>
+        </div>
+
+        <div class="export-actions-row">
+          <button id="btn-export-markdown" class="btn btn-secondary full-width">
+            📝 Descargar Resumen en Markdown (.md)
+          </button>
+          <button id="btn-export-json" class="btn btn-ghost full-width">
+            💾 Descargar Backup (.json)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: USER PROFILE                                                   -->
+  <!-- ===================================================================== -->
+  <div id="profile-modal" class="modal-backdrop hidden">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>👤 Tu Perfil de Participante</h3>
+        <button class="icon-btn" data-close-modal="true">✕</button>
+      </div>
+      <form id="profile-form" class="modal-body stacked-form">
+        <div class="form-group">
+          <label for="profile-name-input">Tu nombre o alias</label>
+          <input type="text" id="profile-name-input" placeholder="Ej. Raúl, Ana, Carlos..." required />
+        </div>
+        <div class="form-group">
+          <label for="profile-color-input">Color distintivo</label>
+          <input type="color" id="profile-color-input" value="#6366f1" class="color-picker-input" />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" data-close-modal="true">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div id="toast-container" class="toast-container"></div>
+</body>
+</html>
+

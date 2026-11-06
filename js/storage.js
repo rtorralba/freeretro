@@ -14,12 +14,12 @@ const STORAGE_KEYS = {
 export const TEMPLATES = {
   classic: {
     id: 'classic',
-    name: 'Clásica completa (Hechos, Seguir, Dejar, Empezar, Agradecimientos, Acciones)',
+    name: 'Clásica completa (Hechos, Seguir, Ideas, Empezar, Agradecimientos, Acciones)',
     columns: [
       { id: 'col-facts', title: 'Hechos', subtitle: 'Datos, hitos o eventos objetivos del sprint', color: 'sky', icon: 'info' },
       { id: 'col-keep', title: 'Seguir haciendo', subtitle: 'Lo que funciona bien y debemos mantener', color: 'emerald', icon: 'check-circle' },
-      { id: 'col-stop', title: 'Dejar de hacer', subtitle: 'Lo que nos frena o no aporta valor', color: 'rose', icon: 'x-circle' },
-      { id: 'col-start', title: 'Empezar a hacer', subtitle: 'Nuevas ideas o experimentos a probar', color: 'amber', icon: 'sparkles' },
+      { id: 'col-stop', title: 'Ideas', subtitle: 'Propuestas y ocurrencias para mejorar', color: 'rose', icon: 'lightbulb' },
+      { id: 'col-start', title: 'Empezar a hacer', subtitle: 'Prácticas o hábitos que queremos incorporar', color: 'amber', icon: 'sparkles' },
       { id: 'col-kudos', title: 'Agradecimientos', subtitle: 'Reconocimientos y gracias a compañeros', color: 'pink', icon: 'heart' },
       { id: 'col-actions', title: 'Plan de Acción', subtitle: 'Compromisos concretos para el próximo sprint', color: 'indigo', icon: 'target', isActionColumn: true }
     ]

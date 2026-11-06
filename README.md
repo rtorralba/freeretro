@@ -1,6 +1,6 @@
 # FreeRetro 🔄 — Retrospectivas Colaborativas P2P para GitHub Pages
 
-Aplicación web 100% estática (HTML, CSS y ES Modules) para realizar retrospectivas ágiles en equipo (**Hechos, Seguir haciendo, Dejar de hacer, Empezar a hacer, Agradecimientos, Plan de Acción**, **4Ls**, **Mad/Sad/Glad**) sin necesidad de servidores propios ni bases de datos externas.
+Aplicación web 100% estática (HTML, CSS y ES Modules) para realizar retrospectivas ágiles en equipo (**Hechos, Seguir haciendo, Ideas, Empezar a hacer, Agradecimientos, Plan de Acción**, **4Ls**, **Mad/Sad/Glad**) sin necesidad de servidores propios ni bases de datos externas.
 
 ---
 
@@ -51,7 +51,15 @@ Al no requerir compilación ni backend, puedes subirla directamente:
 
 ## 💻 Cómo probarla en local
 
-Debido a que usa módulos ES (`<script type="module">`), ábrela con cualquier servidor estático local:
+Debido a que usa módulos ES (`<script type="module">`), usa los scripts incluidos (requieren Python o Node.js):
+
+```bash
+./start.sh        # Linux / macOS
+start.bat         # Windows
+# Puerto opcional: ./start.sh 3000
+```
+
+O bien arranca manualmente cualquier servidor estático local:
 
 ```bash
 # Con Node.js (npx)

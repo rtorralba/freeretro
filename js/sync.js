@@ -423,7 +423,7 @@ export class RetroSyncEngine {
 
   setStatus(state, label) {
     if (this.onStatusChange) {
-      this.onStatusChange({ state, label, peerCount: this.peersInfo.size });
+      this.onStatusChange({ state, label, peerCount: this.peersInfo.size, isHub: this.isHub });
     }
   }
 

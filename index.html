@@ -26,6 +26,14 @@
       </a>
     </div>
 
+    <div id="navbar-room-status" class="navbar-center hidden">
+      <div id="peers-avatars" class="peers-avatars"></div>
+      <div id="sync-status-pill" class="sync-pill status-connecting">
+        <span class="status-dot"></span>
+        <span>Conectando...</span>
+      </div>
+    </div>
+
     <div class="navbar-right">
       <button id="user-profile-btn" class="user-profile-pill" title="Cambiar tu nombre y color">
         <!-- Populated by JS -->
@@ -71,7 +79,7 @@
             <div class="form-group">
               <label for="create-template">Plantilla de columnas</label>
               <select id="create-template">
-                <option value="classic">Clásica (Seguir haciendo, Dejar de hacer, Empezar, Acciones)</option>
+                <option value="classic">Clásica (Hechos, Seguir, Dejar, Empezar, Agradecimientos, Acciones)</option>
                 <option value="fourLs">Las 4 Ls (Liked, Learned, Lacked, Longed For + Acciones)</option>
                 <option value="madSadGlad">Mad, Sad, Glad (Emocional + Acciones)</option>
               </select>
@@ -217,14 +225,6 @@
         <button id="btn-add-column" class="btn btn-ghost btn-sm" title="Añadir una nueva columna al tablero">
           + Columna
         </button>
-
-        <div class="peers-cluster">
-          <div id="peers-avatars" class="peers-avatars"></div>
-          <div id="sync-status-pill" class="sync-pill status-connecting">
-            <span class="status-dot"></span>
-            <span>Conectando...</span>
-          </div>
-        </div>
 
         <button id="btn-open-share" class="btn btn-primary btn-sm">
           🔗 Compartir / Exportar

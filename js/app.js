@@ -162,8 +162,9 @@ class FreeRetroApp {
 
     document.getElementById('dashboard-view').classList.remove('hidden');
     document.getElementById('board-view').classList.add('hidden');
+    document.getElementById('navbar-room-status')?.classList.add('hidden');
 
-    this. populatePreviousSessionSelect();
+    this.populatePreviousSessionSelect();
     this.renderSessionHistory();
   }
 
@@ -173,6 +174,7 @@ class FreeRetroApp {
 
     document.getElementById('dashboard-view').classList.add('hidden');
     document.getElementById('board-view').classList.remove('hidden');
+    document.getElementById('navbar-room-status')?.classList.remove('hidden');
 
     // Start P2P Sync Engine for this room
     if (this.syncEngine) {
@@ -195,6 +197,7 @@ class FreeRetroApp {
       onStatusChange: (statusObj) => {
         this.syncStatus = statusObj;
         this.renderSyncStatus();
+        this.renderTimerDisplay();
       }
     });
 
@@ -606,6 +609,11 @@ class FreeRetroApp {
   // SYNCHRONIZED COUNTDOWN TIMER
   // =========================================================================
 
+  isCoordinator() {
+    if (!this.syncEngine) return true;
+    return Boolean(this.syncEngine.isHub || this.syncStatus.state === 'offline');
+  }
+
   startTimerLoop() {
     clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => {
@@ -616,19 +624,27 @@ class FreeRetroApp {
   renderTimerDisplay() {
     const display = document.getElementById('timer-display');
     const toggleBtn = document.getElementById('btn-timer-toggle');
+    const presetSelect = document.getElementById('timer-preset-select');
+    const widget = display?.closest('.timer-widget');
     if (!display || !this.currentSession) return;
 
+    const canControl = this.isCoordinator();
     const timer = this.currentSession.timer || { running: false, durationSec: 300, endsAt: null };
     let remainingSec = timer.durationSec || 300;
 
     if (timer.running && timer.endsAt) {
       remainingSec = Math.max(0, Math.ceil((timer.endsAt - Date.now()) / 1000));
       if (remainingSec === 0) {
-        this.updateSession(s => {
-          s.timer.running = false;
-          s.timer.endsAt = null;
-          s.timer.updatedAt = Date.now();
-        });
+        if (canControl) {
+          this.updateSession(s => {
+            s.timer.running = false;
+            s.timer.endsAt = null;
+            s.timer.updatedAt = Date.now();
+          });
+        } else {
+          timer.running = false;
+          timer.endsAt = null;
+        }
         this.showToast('⏰ ¡Tiempo terminado!');
       }
     }
@@ -638,9 +654,20 @@ class FreeRetroApp {
     display.textContent = `${mins}:${secs}`;
     display.classList.toggle('timer-running', Boolean(timer.running));
 
+    if (presetSelect) {
+      presetSelect.classList.toggle('hidden', !canControl);
+    }
+
     if (toggleBtn) {
+      toggleBtn.classList.toggle('hidden', !canControl);
       toggleBtn.textContent = timer.running ? '⏸' : '▶';
       toggleBtn.title = timer.running ? 'Pausar temporizador' : 'Iniciar temporizador para todos';
+    }
+
+    if (widget) {
+      widget.title = canControl
+        ? 'Temporizador sincronizado (Eres el coordinador: puedes iniciarlo o pausarlo)'
+        : 'Temporizador sincronizado (Controlado por el coordinador de la sala)';
     }
   }
 
@@ -877,9 +904,13 @@ class FreeRetroApp {
       });
     });
 
-    // Timer controls
+    // Timer controls (only Coordinator can start/stop/change duration)
     document.getElementById('btn-timer-toggle')?.addEventListener('click', () => {
       if (!this.currentSession) return;
+      if (!this.isCoordinator()) {
+        this.showToast('Solo el coordinador de la sala puede controlar el temporizador', true);
+        return;
+      }
       this.updateSession(s => {
         if (s.timer.running) {
           const left = Math.max(0, Math.ceil((s.timer.endsAt - Date.now()) / 1000));
@@ -897,6 +928,10 @@ class FreeRetroApp {
     });
 
     document.getElementById('timer-preset-select')?.addEventListener('change', (e) => {
+      if (!this.isCoordinator()) {
+        this.showToast('Solo el coordinador de la sala puede cambiar el tiempo', true);
+        return;
+      }
       const sec = Number(e.target.value) || 300;
       this.updateSession(s => {
         s.timer.running = false;

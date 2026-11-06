@@ -60,6 +60,7 @@ export class RetroSyncEngine {
     this.peersInfo.set(this.userProfile.id, {
       id: this.userProfile.id,
       name: this.userProfile.name || 'Participante',
+      avatar: this.userProfile.avatar || '🦊',
       color: this.userProfile.color || '#6366f1',
       nodeId: this.nodeId,
       lastSeen: Date.now(),
@@ -81,6 +82,7 @@ export class RetroSyncEngine {
     return {
       id: this.userProfile.id,
       name: this.userProfile.name || 'Participante',
+      avatar: this.userProfile.avatar || '🦊',
       color: this.userProfile.color || '#6366f1',
       nodeId: this.nodeId,
       lastSeen: Date.now()

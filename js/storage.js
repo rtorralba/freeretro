@@ -55,6 +55,17 @@ export function generateId(prefix = '') {
   return prefix ? `${prefix}-${rand}` : rand;
 }
 
+export const FUN_AVATARS = [
+  '🦊', '🐱', '🐶', '🐼', '🐨', '🦁', '🐯', '🐸',
+  '🐙', '🦄', '🦖', '🚀', '👾', '🤖', '🧙', 'ninja'
+];
+// For clean rendering, let's use all pure emojis:
+export const AVATARS = [
+  '🦊', '🐱', '🐶', '🐼', '🐨', '🦁', '🐯', '🐸',
+  '🐙', '🦄', '🦖', '🚀', '👾', '🤖', '🧙‍♂️', '🥷',
+  '🦉', '🐧', '🦥', '🦦', '🦔', '🐲', '🍕', '🥑'
+];
+
 /**
  * Gets or creates the current user's local profile
  */
@@ -63,7 +74,13 @@ export function getUserProfile() {
     const raw = localStorage.getItem(STORAGE_KEYS.USER_PROFILE);
     if (raw) {
       const profile = JSON.parse(raw);
-      if (profile && profile.id && profile.name) return profile;
+      if (profile && profile.id && profile.name) {
+        if (!profile.avatar) {
+          profile.avatar = AVATARS[Math.floor(Math.random() * AVATARS.length)];
+          saveUserProfile(profile);
+        }
+        return profile;
+      }
     }
   } catch (e) {
     console.warn('Error reading user profile:', e);
@@ -73,6 +90,7 @@ export function getUserProfile() {
   const newProfile = {
     id: generateId('user'),
     name: '',
+    avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)],
     color: colors[Math.floor(Math.random() * colors.length)]
   };
   saveUserProfile(newProfile);
@@ -115,6 +133,7 @@ export function createEmptySession({
       text: `[Anterior] ${act.text}`,
       authorId: act.authorId || 'system',
       authorName: act.authorName || createdBy,
+      authorAvatar: act.authorAvatar || '🎯',
       authorColor: act.authorColor || '#6366f1',
       Assignee: act.Assignee || '',
       done: Boolean(act.done),
@@ -488,7 +507,8 @@ export function exportSessionToMarkdown(session) {
     for (const card of colCards) {
       const votes = getCardVoteCount(card);
       const voteBadge = votes > 0 ? ` **[+${votes} votos]**` : '';
-      const author = !session.settings?.anonymousCards && card.authorName ? ` _(por ${card.authorName})_` : '';
+      const authorAvatar = card.authorAvatar ? `${card.authorAvatar} ` : '';
+      const author = !session.settings?.anonymousCards && card.authorName ? ` _(por ${authorAvatar}${card.authorName})_` : '';
       const assignee = card.Assignee ? ` → **Responsable: @${card.Assignee}**` : '';
 
       if (col.isActionColumn) {

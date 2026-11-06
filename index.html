@@ -311,8 +311,11 @@
           <input type="text" id="profile-name-input" placeholder="Ej. Raúl, Ana, Carlos..." required />
         </div>
         <div class="form-group">
-          <label for="profile-color-input">Color distintivo</label>
-          <input type="color" id="profile-color-input" value="#6366f1" class="color-picker-input" />
+          <label>Elige tu avatar divertido</label>
+          <div id="avatar-picker-grid" class="avatar-picker-grid">
+            <!-- Populated by JS -->
+          </div>
+          <input type="hidden" id="profile-avatar-input" value="🦊" />
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-ghost" data-close-modal="true">Cancelar</button>

@@ -4,6 +4,7 @@
 
 import {
   TEMPLATES,
+  AVATARS,
   generateId,
   getUserProfile,
   saveUserProfile,
@@ -86,9 +87,9 @@ class FreeRetroApp {
   renderUserBadge() {
     const badge = document.getElementById('user-profile-btn');
     if (!badge) return;
-    const initials = (this.user.name || 'U').slice(0, 2).toUpperCase();
+    const avatar = this.user.avatar || '🦊';
     badge.innerHTML = `
-      <span class="avatar-dot" style="background:${this.escapeHtml(this.user.color)}">${this.escapeHtml(initials)}</span>
+      <span class="avatar-dot avatar-emoji">${this.escapeHtml(avatar)}</span>
       <span class="user-name-label">${this.escapeHtml(this.user.name)}</span>
     `;
   }
@@ -499,7 +500,7 @@ class FreeRetroApp {
       >
         <div class="card-top-bar">
           <div class="card-author">
-            <span class="author-dot" style="background:${this.escapeHtml(card.authorColor || '#6366f1')}"></span>
+            <span class="author-avatar">${this.escapeHtml(card.authorAvatar || '🦊')}</span>
             <span>${this.escapeHtml(card.authorName || 'Anónimo')}</span>
             ${isBlurred && isOwnCard ? `<span class="own-private-tag" title="Solo tú puedes leer tu tarjeta hasta que se revelen">🔒 Solo visible para ti</span>` : ''}
           </div>
@@ -592,18 +593,18 @@ class FreeRetroApp {
     const list = this.peers.length > 0 ? this.peers : [{
       id: this.user.id,
       name: this.user.name,
+      avatar: this.user.avatar || '🦊',
       color: this.user.color,
       isSelf: true
     }];
 
     container.innerHTML = list.map(p => {
-      const initials = (p.name || 'U').slice(0, 2).toUpperCase();
+      const avatar = p.avatar || '🦊';
       return `
         <span
           class="peer-avatar ${p.isSelf ? 'is-self' : ''}"
-          style="background:${this.escapeHtml(p.color || '#6366f1')}"
           title="${this.escapeHtml(p.name)}${p.isSelf ? ' (Tú)' : ' (Conectado en tiempo real)'}"
-        >${this.escapeHtml(initials)}</span>
+        >${this.escapeHtml(avatar)}</span>
       `;
     }).join('');
   }
@@ -732,9 +733,31 @@ class FreeRetroApp {
   openProfileModal() {
     const modal = document.getElementById('profile-modal');
     const nameInput = document.getElementById('profile-name-input');
-    const colorInput = document.getElementById('profile-color-input');
+    const avatarInput = document.getElementById('profile-avatar-input');
+    const grid = document.getElementById('avatar-picker-grid');
+
     if (nameInput) nameInput.value = this.user.name || '';
-    if (colorInput) colorInput.value = this.user.color || '#6366f1';
+    const currentAvatar = this.user.avatar || '🦊';
+    if (avatarInput) avatarInput.value = currentAvatar;
+
+    if (grid) {
+      grid.innerHTML = AVATARS.map(emoji => `
+        <button
+          type="button"
+          class="avatar-option-btn ${emoji === currentAvatar ? 'selected' : ''}"
+          data-avatar="${emoji}"
+        >${emoji}</button>
+      `).join('');
+
+      grid.querySelectorAll('.avatar-option-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          grid.querySelectorAll('.avatar-option-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          if (avatarInput) avatarInput.value = btn.dataset.avatar;
+        });
+      });
+    }
+
     modal.classList.remove('hidden');
     setTimeout(() => nameInput?.focus(), 50);
   }
@@ -753,10 +776,10 @@ class FreeRetroApp {
     document.getElementById('profile-form')?.addEventListener('submit', (e) => {
       e.preventDefault();
       const nameVal = document.getElementById('profile-name-input').value.trim();
-      const colorVal = document.getElementById('profile-color-input').value;
+      const avatarVal = document.getElementById('profile-avatar-input')?.value || '🦊';
       if (nameVal) {
         this.user.name = nameVal;
-        this.user.color = colorVal;
+        this.user.avatar = avatarVal;
         saveUserProfile(this.user);
         this.renderUserBadge();
         if (this.syncEngine) {
@@ -766,7 +789,7 @@ class FreeRetroApp {
           this.renderBoard();
         }
         document.getElementById('profile-modal').classList.add('hidden');
-        this.showToast(`Perfil actualizado: ${this.user.name}`);
+        this.showToast(`Perfil actualizado: ${this.user.avatar} ${this.user.name}`);
       }
     });
 
@@ -1136,6 +1159,7 @@ class FreeRetroApp {
               text: card.text,
               authorId: this.user.id,
               authorName: this.user.name,
+              authorAvatar: this.user.avatar || '🦊',
               authorColor: this.user.color,
               Assignee: assignee.trim(),
               done: false,
@@ -1198,6 +1222,7 @@ class FreeRetroApp {
             text,
             authorId: this.user.id,
             authorName: this.user.name,
+            authorAvatar: this.user.avatar || '🦊',
             authorColor: this.user.color,
             Assignee: assignee,
             done: false,

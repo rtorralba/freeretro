@@ -219,3 +219,41 @@ test('Concurrency: Phase transition and blur reveal while cards are added concur
   assert.equal(merged.cards['new-card'].text, 'Keep daily sync short');
 });
 
+test('Moderators: Concurrent candidate addition, count increment, and next selection', () => {
+  const base = createEmptySession({ id: 'retro-mod-test' });
+
+  // Peer 1 adds 'Ana' (count: 1) and 'Carlos' (count: 0)
+  const peer1 = structuredClone(base);
+  peer1.moderators = [
+    { id: 'mod-1', name: 'Ana', count: 1, isNext: false, updatedAt: 100, deleted: false },
+    { id: 'mod-2', name: 'Carlos', count: 0, isNext: false, updatedAt: 100, deleted: false }
+  ];
+  peer1.updatedAt = 100;
+
+  // Peer 2 concurrently adds 'Raúl' (count: 2) and selects 'Carlos' as next moderator (T=200)
+  const peer2 = structuredClone(base);
+  peer2.moderators = [
+    { id: 'mod-2', name: 'Carlos', count: 0, isNext: true, updatedAt: 200, deleted: false },
+    { id: 'mod-3', name: 'Raúl', count: 2, isNext: false, updatedAt: 200, deleted: false }
+  ];
+  peer2.updatedAt = 200;
+
+  const merged = mergeSessions(peer1, peer2);
+  const active = merged.moderators.filter(m => !m.deleted);
+
+  assert.equal(active.length, 3, 'All 3 distinct team members must be preserved');
+  const carlos = active.find(m => m.id === 'mod-2');
+  assert.equal(carlos.isNext, true, 'Carlos should be selected as next moderator from the higher timestamp T=200');
+
+  // Verify carrying over to a new session
+  const newSession = createEmptySession({
+    id: 'retro-next-sprint',
+    title: 'Next Sprint Retro',
+    previousModerators: active
+  });
+  assert.equal(newSession.moderators.length, 3, 'Imported moderators must exist in the new session');
+  const newCarlos = newSession.moderators.find(m => m.name === 'Carlos');
+  assert.equal(newCarlos.count, 0, 'Count should be carried over');
+  assert.equal(newCarlos.isNext, false, 'isNext must be reset to false in the new session so a new choice can be made');
+});
+

@@ -34,6 +34,12 @@ Aplicación web 100% estática (HTML, CSS y ES Modules) para realizar retrospect
    - **Votación (+1)** con límite configurable de votos por participante y ordenación por más votadas.
    - **Temporizador sincronizado** con selector de minutos.
    - **Conversión rápida a Acción (`⚡`)** con asignación de responsable y casilla de verificación completada.
+8. **Rotación y Elección Equitativa de Moderadores (`🎤`)**:
+   - Registro de miembros del equipo con conteo acumulado de sesiones facilitadas.
+   - Elección del moderador/a de la siguiente retro con distintivo en la barra superior y banner informativo sincronizado en tiempo real.
+   - Botón *"✨ Sugerir próximo"* para priorizar a quien menos veces ha moderado y garantizar una rotación justa.
+   - Importación automática de la lista y conteos acumulados desde sesiones anteriores (al crear la retro o en cualquier momento desde el modal).
+   - Inclusión del próximo moderador y el histórico de facilitación en el resumen exportado en Markdown.
 
 ---
 

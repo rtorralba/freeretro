@@ -117,7 +117,8 @@ export function createEmptySession({
   maxVotes = 5,
   createdBy = 'Organizador',
   coordinatorId = '',
-  previousActions = []
+  previousActions = [],
+  previousModerators = []
 } = {}) {
   const tpl = TEMPLATES[templateId] || TEMPLATES.classic;
   const now = Date.now();
@@ -177,6 +178,14 @@ export function createEmptySession({
       updatedAt: now,
       deleted: false
     })),
+    moderators: (previousModerators || []).map(m => ({
+      id: m.id || generateId('mod'),
+      name: (m.name || '').trim(),
+      count: Number(m.count) || 0,
+      isNext: false,
+      updatedAt: now,
+      deleted: false
+    })),
     cards
   };
 }
@@ -228,6 +237,17 @@ export function mergeSessions(local, remote) {
     }
   });
   merged.columns = Array.from(colMap.values()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  // Moderators merge by ID (LWW Element-Set)
+  const modMap = new Map();
+  (merged.moderators || []).forEach(m => modMap.set(m.id, m));
+  (remote.moderators || []).forEach(rm => {
+    const lm = modMap.get(rm.id);
+    if (!lm || (rm.updatedAt || 0) > (lm.updatedAt || 0)) {
+      modMap.set(rm.id, { ...rm });
+    }
+  });
+  merged.moderators = Array.from(modMap.values());
 
   // Cards merge by card ID (preserves cards created offline by any peer!)
   merged.cards = merged.cards || {};
@@ -351,6 +371,16 @@ export function hasSessionDifferences(a, b) {
     }
   }
 
+  // Moderators check
+  const aMods = a.moderators || [], bMods = b.moderators || [];
+  if (aMods.length !== bMods.length) return true;
+  for (let i = 0; i < aMods.length; i++) {
+    const m1 = aMods[i], m2 = bMods[i];
+    if (m1.id !== m2.id || m1.name !== m2.name || m1.count !== m2.count || m1.isNext !== m2.isNext || m1.deleted !== m2.deleted || m1.updatedAt !== m2.updatedAt) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -451,6 +481,15 @@ export function getPendingActionsFromSession(sessionId) {
 }
 
 /**
+ * Get moderators list and history from a past session so they can be carried over
+ */
+export function getModeratorsFromSession(sessionId) {
+  const session = loadSession(sessionId);
+  if (!session || !session.moderators) return [];
+  return (session.moderators || []).filter(m => !m.deleted);
+}
+
+/**
  * URL-safe encoding / decoding using LZString (if loaded) or UTF-8 Base64URL fallback.
  * Used for:
  * 1) Initializing a session via link before anyone is online (#room=xxx&init=...)
@@ -516,6 +555,12 @@ export function createInitMetadata(session) {
       icon: c.icon,
       isActionColumn: Boolean(c.isActionColumn),
       order: c.order
+    })),
+    mods: (session.moderators || []).filter(m => !m.deleted).map(m => ({
+      id: m.id,
+      name: m.name,
+      count: m.count,
+      isNext: Boolean(m.isNext)
     }))
   };
 }
@@ -551,6 +596,11 @@ export function createSessionFromInitMetadata(meta) {
     columns: (meta.cols || TEMPLATES.classic.columns).map((c, idx) => ({
       ...c,
       order: c.order ?? idx,
+      updatedAt: 1,
+      deleted: false
+    })),
+    moderators: (meta.mods || []).map(m => ({
+      ...m,
       updatedAt: 1,
       deleted: false
     })),
@@ -606,6 +656,24 @@ export function exportSessionToMarkdown(session) {
       for (const cm of comments) {
         lines.push(`  - 💬 _${cm.authorName || 'Anónimo'}:_ ${cm.text}`);
       }
+    }
+    lines.push('');
+  }
+
+  // Moderators section in markdown
+  const activeMods = (session.moderators || []).filter(m => !m.deleted);
+  if (activeMods.length > 0) {
+    const nextMod = activeMods.find(m => m.isNext);
+    lines.push('## 🎤 Moderación de Retrospectivas');
+    if (nextMod) {
+      lines.push(`> **Próximo moderador/a:** **${nextMod.name}** 🎤`);
+      lines.push('');
+    }
+    lines.push('### Historial de facilitación del equipo');
+    const sortedMods = [...activeMods].sort((a, b) => a.count - b.count || a.name.localeCompare(b.name));
+    for (const m of sortedMods) {
+      const nextBadge = m.isNext ? ' ⭐ _(elegido/a para moderar la siguiente sesión)_' : '';
+      lines.push(`- **${m.name}**: ${m.count} ${m.count === 1 ? 'sesión' : 'sesiones'}${nextBadge}`);
     }
     lines.push('');
   }

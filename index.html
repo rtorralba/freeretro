@@ -91,9 +91,9 @@
           </div>
 
           <div class="form-group">
-            <label for="create-import-actions">Importar acciones pendientes de una sesión anterior</label>
+            <label for="create-import-actions">Importar de una sesión anterior (acciones pendientes y equipo de moderación)</label>
             <select id="create-import-actions">
-              <option value="">No importar acciones anteriores</option>
+              <option value="">No importar de sesiones anteriores</option>
             </select>
           </div>
 
@@ -232,6 +232,10 @@
           🔥 Más votadas
         </button>
 
+        <button id="btn-open-moderator" class="btn btn-secondary btn-sm" title="Gestión y rotación equitativa de moderadores">
+          🎤 Moderador <span id="board-moderator-badge" class="moderator-badge"></span>
+        </button>
+
         <button id="btn-add-column" class="btn btn-ghost btn-sm" title="Añadir una nueva columna al tablero">
           + Columna
         </button>
@@ -292,6 +296,58 @@
             💾 Descargar Backup (.json)
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: MODERATOR ROTATION & SELECTION                                  -->
+  <!-- ===================================================================== -->
+  <div id="moderators-modal" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>🎤 Moderador de la Siguiente Retro</h3>
+        <button class="icon-btn" data-close-modal="true" id="btn-close-moderator">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="moderator-hero-banner" class="moderator-hero-banner">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div class="moderators-section-header">
+          <div>
+            <h4>Equipo y rotación equitativa</h4>
+            <p class="section-desc">Anota las veces que cada persona ha moderado para repartir las retros de forma justa.</p>
+          </div>
+          <button id="btn-suggest-moderator" class="btn btn-secondary btn-xs" title="Sugerir a quien menos veces ha moderado">
+            ✨ Sugerir próximo
+          </button>
+        </div>
+
+        <!-- Add person inline form -->
+        <form id="add-moderator-form" class="add-moderator-form">
+          <input type="text" id="new-moderator-name" placeholder="Nombre de la persona (ej. Ana, Carlos)..." required />
+          <button type="submit" class="btn btn-primary btn-sm">+ Añadir</button>
+        </form>
+
+        <!-- Moderators list -->
+        <div id="moderators-list" class="moderators-list">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Import from previous board -->
+        <div class="import-moderators-box">
+          <span class="import-label">📂 Importar lista desde un tablero anterior:</span>
+          <div class="import-moderators-row">
+            <select id="select-import-moderators" class="form-select-sm">
+              <option value="">Selecciona sesión previa...</option>
+            </select>
+            <button id="btn-confirm-import-moderators" class="btn btn-secondary btn-xs">Importar</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-close-modal="true">Cerrar</button>
       </div>
     </div>
   </div>

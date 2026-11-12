@@ -15,6 +15,7 @@ import {
   deleteSession,
   getSessionIndex,
   getPendingActionsFromSession,
+  getModeratorsFromSession,
   encodePayloadToUrl,
   decodePayloadFromUrl,
   createInitMetadata,
@@ -387,6 +388,7 @@ class FreeRetroApp {
 
     // Pre-session / Blur info banner
     const bannerEl = document.getElementById('board-info-banner');
+    const nextMod = (s.moderators || []).find(m => !m.deleted && m.isNext);
     if (bannerEl) {
       const remainingVotes = this.getRemainingVotes();
       if (isBlurred) {
@@ -403,9 +405,28 @@ class FreeRetroApp {
             <button class="btn btn-xs btn-light" id="banner-sort-votes-btn">${this.sortByVotes ? 'Ordenar por creación' : 'Ordenar por más votadas'}</button>
           </div>
         `;
+      } else if (nextMod) {
+        bannerEl.innerHTML = `
+          <div class="banner-content" style="background: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.3);">
+            <span>🎤 <strong>Próximo moderador/a:</strong> <strong>${this.escapeHtml(nextMod.name)}</strong> facilitará la siguiente retro.</span>
+            <button class="btn btn-xs btn-light" id="banner-open-mod-btn">Gestionar equipo</button>
+          </div>
+        `;
       } else {
         bannerEl.innerHTML = '';
       }
+    }
+
+    // Render Moderator badge on toolbar button
+    const modBadge = document.getElementById('board-moderator-badge');
+    if (modBadge) {
+      modBadge.textContent = nextMod ? `: ${nextMod.name}` : '';
+    }
+
+    // Refresh moderators modal if currently visible
+    const modModal = document.getElementById('moderators-modal');
+    if (modModal && !modModal.classList.contains('hidden')) {
+      this.renderModeratorsModal();
     }
 
     // Sort by votes button state
@@ -869,6 +890,84 @@ class FreeRetroApp {
     setTimeout(() => nameInput?.focus(), 50);
   }
 
+  openModeratorsModal() {
+    if (!this.currentSession) return;
+    const modal = document.getElementById('moderators-modal');
+    this.renderModeratorsModal();
+    modal.classList.remove('hidden');
+    setTimeout(() => document.getElementById('new-moderator-name')?.focus(), 50);
+  }
+
+  renderModeratorsModal() {
+    if (!this.currentSession) return;
+    const s = this.currentSession;
+    s.moderators = s.moderators || [];
+
+    const activeMods = s.moderators.filter(m => !m.deleted);
+    const nextMod = activeMods.find(m => m.isNext);
+
+    // 1. Hero banner
+    const heroEl = document.getElementById('moderator-hero-banner');
+    if (heroEl) {
+      heroEl.className = `moderator-hero-banner ${nextMod ? 'has-next' : ''}`;
+      if (nextMod) {
+        heroEl.innerHTML = `
+          <div class="mod-hero-info">
+            <h4><span>⭐</span> Próximo moderador/a: <span class="mod-hero-highlight">${this.escapeHtml(nextMod.name)}</span></h4>
+            <p>Elegido/a por el equipo para facilitar la retrospectiva del próximo sprint.</p>
+          </div>
+          <button type="button" class="btn btn-ghost btn-xs" data-action="unselect-next-mod" title="Desmarcar próximo moderador">Desmarcar</button>
+        `;
+      } else {
+        heroEl.innerHTML = `
+          <div class="mod-hero-info">
+            <h4><span>⏳</span> Pendiente de elegir moderador</h4>
+            <p>Selecciona abajo a un compañero o pulsa "Sugerir próximo" para rotar equitativamente.</p>
+          </div>
+        `;
+      }
+    }
+
+    // 2. Moderators list
+    const listEl = document.getElementById('moderators-list');
+    if (listEl) {
+      if (activeMods.length === 0) {
+        listEl.innerHTML = `<div class="moderators-empty-placeholder">Aún no hay compañeros en la lista. Añade los miembros del equipo arriba o importa desde un tablero anterior.</div>`;
+      } else {
+        const sorted = [...activeMods].sort((a, b) => (a.count || 0) - (b.count || 0) || a.name.localeCompare(b.name));
+        listEl.innerHTML = sorted.map(m => `
+          <div class="moderator-row ${m.isNext ? 'is-next-moderator' : ''}" data-mod-id="${this.escapeHtml(m.id)}">
+            <div class="mod-row-left">
+              <span class="mod-name">${this.escapeHtml(m.name)}</span>
+              ${m.isNext ? `<span class="next-mod-tag">⭐ Moderará la siguiente</span>` : ''}
+            </div>
+            <div class="mod-row-right">
+              <div class="mod-count-stepper" title="Veces que ha sido moderador">
+                <button type="button" data-action="mod-dec" data-id="${this.escapeHtml(m.id)}" title="Restar 1 sesión">-</button>
+                <span class="mod-count-label"><strong>${m.count || 0}</strong> ${(m.count === 1) ? 'vez' : 'veces'}</span>
+                <button type="button" data-action="mod-inc" data-id="${this.escapeHtml(m.id)}" title="Sumar 1 sesión">+</button>
+              </div>
+              ${m.isNext ? `
+                <button type="button" class="btn btn-primary btn-xs" data-action="toggle-mod-next" data-id="${this.escapeHtml(m.id)}" title="Hacer clic para deseleccionar">✓ Elegido</button>
+              ` : `
+                <button type="button" class="btn btn-secondary btn-xs" data-action="toggle-mod-next" data-id="${this.escapeHtml(m.id)}" title="Elegir como moderador de la siguiente retro">Elegir</button>
+              `}
+              <button type="button" class="icon-btn danger-hover" data-action="delete-mod" data-id="${this.escapeHtml(m.id)}" title="Eliminar de la lista">✕</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 3. Populate import select with other sessions
+    const importSelect = document.getElementById('select-import-moderators');
+    if (importSelect) {
+      const allSessions = getSessionIndex().filter(item => item.id !== s.id);
+      importSelect.innerHTML = `<option value="">Selecciona sesión previa...</option>` +
+        allSessions.map(item => `<option value="${this.escapeHtml(item.id)}">${this.escapeHtml(item.title)}${item.sprint ? ` (${this.escapeHtml(item.sprint)})` : ''}</option>`).join('');
+    }
+  }
+
   // =========================================================================
   // EVENT BINDINGS
   // =========================================================================
@@ -911,6 +1010,7 @@ class FreeRetroApp {
       const importFromId = document.getElementById('create-import-actions').value;
 
       const previousActions = importFromId ? getPendingActionsFromSession(importFromId) : [];
+      const previousModerators = importFromId ? getModeratorsFromSession(importFromId) : [];
 
       const newSession = createEmptySession({
         title,
@@ -920,7 +1020,8 @@ class FreeRetroApp {
         maxVotes,
         createdBy: this.user.name,
         coordinatorId: this.user.id,
-        previousActions
+        previousActions,
+        previousModerators
       });
 
       saveSession(newSession);
@@ -981,6 +1082,100 @@ class FreeRetroApp {
     // Share modal button
     document.getElementById('btn-open-share')?.addEventListener('click', () => {
       this.openShareModal();
+    });
+
+    // Moderator modal button
+    document.getElementById('btn-open-moderator')?.addEventListener('click', () => {
+      this.openModeratorsModal();
+    });
+
+    // Add moderator form submit
+    document.getElementById('add-moderator-form')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('new-moderator-name');
+      const name = input?.value.trim();
+      if (!name) return;
+      input.value = '';
+
+      this.updateSession(s => {
+        s.moderators = s.moderators || [];
+        const existing = s.moderators.find(m => !m.deleted && m.name.toLowerCase() === name.toLowerCase());
+        if (existing) {
+          this.showToast(`"${name}" ya está en la lista`, true);
+          return;
+        }
+        const id = generateId('mod');
+        s.moderators.push({
+          id,
+          name,
+          count: 0,
+          isNext: false,
+          updatedAt: Date.now(),
+          deleted: false
+        });
+      });
+      this.renderModeratorsModal();
+    });
+
+    // Suggest moderator button (fair rotation: person with fewest sessions)
+    document.getElementById('btn-suggest-moderator')?.addEventListener('click', () => {
+      if (!this.currentSession) return;
+      const mods = (this.currentSession.moderators || []).filter(m => !m.deleted);
+      if (mods.length === 0) {
+        this.showToast('Añade miembros al equipo primero para poder sugerir', true);
+        return;
+      }
+      const sorted = [...mods].sort((a, b) => (a.count || 0) - (b.count || 0));
+      const chosen = sorted[0];
+      this.updateSession(s => {
+        (s.moderators || []).forEach(m => {
+          m.isNext = (m.id === chosen.id);
+          m.updatedAt = Date.now();
+        });
+      });
+      this.renderModeratorsModal();
+      this.showToast(`✨ Sugerido/a: ${chosen.name} por tener menos moderaciones (${chosen.count || 0})`);
+    });
+
+    // Import moderators from previous board
+    document.getElementById('btn-confirm-import-moderators')?.addEventListener('click', () => {
+      const select = document.getElementById('select-import-moderators');
+      const sourceId = select?.value;
+      if (!sourceId) {
+        this.showToast('Selecciona una sesión de la lista', true);
+        return;
+      }
+      const importedMods = getModeratorsFromSession(sourceId);
+      if (importedMods.length === 0) {
+        this.showToast('La sesión seleccionada no tiene lista de moderadores guardada', true);
+        return;
+      }
+      this.updateSession(s => {
+        s.moderators = s.moderators || [];
+        const map = new Map();
+        s.moderators.forEach(m => map.set(m.name.toLowerCase(), m));
+        importedMods.forEach(im => {
+          const key = im.name.toLowerCase();
+          if (map.has(key)) {
+            const existing = map.get(key);
+            if ((im.updatedAt || 0) > (existing.updatedAt || 0)) {
+              existing.count = im.count;
+              existing.updatedAt = Date.now();
+            }
+          } else {
+            s.moderators.push({
+              id: generateId('mod'),
+              name: im.name,
+              count: im.count || 0,
+              isNext: false,
+              updatedAt: Date.now(),
+              deleted: false
+            });
+          }
+        });
+      });
+      this.renderModeratorsModal();
+      this.showToast(`Se han importado ${importedMods.length} personas del equipo`);
     });
 
     // Copy buttons inside Share Modal
@@ -1139,6 +1334,11 @@ class FreeRetroApp {
       if (e.target.id === 'banner-sort-votes-btn') {
         this.sortByVotes = !this.sortByVotes;
         this.renderBoard();
+        return;
+      }
+
+      if (e.target.id === 'banner-open-mod-btn') {
+        this.openModeratorsModal();
         return;
       }
 
@@ -1304,6 +1504,67 @@ class FreeRetroApp {
               }
             });
           }
+          break;
+        }
+        case 'mod-inc': {
+          const modId = actionEl.dataset.id;
+          this.updateSession(s => {
+            const m = (s.moderators || []).find(x => x.id === modId);
+            if (m) {
+              m.count = (Number(m.count) || 0) + 1;
+              m.updatedAt = Date.now();
+            }
+          });
+          this.renderModeratorsModal();
+          break;
+        }
+        case 'mod-dec': {
+          const modId = actionEl.dataset.id;
+          this.updateSession(s => {
+            const m = (s.moderators || []).find(x => x.id === modId);
+            if (m) {
+              m.count = Math.max(0, (Number(m.count) || 0) - 1);
+              m.updatedAt = Date.now();
+            }
+          });
+          this.renderModeratorsModal();
+          break;
+        }
+        case 'toggle-mod-next': {
+          const modId = actionEl.dataset.id;
+          this.updateSession(s => {
+            (s.moderators || []).forEach(m => {
+              if (m.id === modId) {
+                m.isNext = !m.isNext;
+              } else {
+                m.isNext = false;
+              }
+              m.updatedAt = Date.now();
+            });
+          });
+          this.renderModeratorsModal();
+          break;
+        }
+        case 'unselect-next-mod': {
+          this.updateSession(s => {
+            (s.moderators || []).forEach(m => {
+              m.isNext = false;
+              m.updatedAt = Date.now();
+            });
+          });
+          this.renderModeratorsModal();
+          break;
+        }
+        case 'delete-mod': {
+          const modId = actionEl.dataset.id;
+          this.updateSession(s => {
+            const m = (s.moderators || []).find(x => x.id === modId);
+            if (m) {
+              m.deleted = true;
+              m.updatedAt = Date.now();
+            }
+          });
+          this.renderModeratorsModal();
           break;
         }
       }

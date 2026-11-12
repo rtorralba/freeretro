@@ -1345,3 +1345,220 @@ select option {
   transform: translateY(8px);
 }
 
+/* ==========================================================================
+   MODERATOR ROTATION & SELECTION
+   ========================================================================== */
+
+.moderator-badge {
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.moderator-badge:empty {
+  display: none;
+}
+
+.moderator-hero-banner {
+  padding: 14px 18px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.moderator-hero-banner.has-next {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.mod-hero-info h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mod-hero-info p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.mod-hero-highlight {
+  color: var(--primary-light);
+  font-weight: 700;
+}
+
+.moderators-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.moderators-section-header h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.section-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.add-moderator-form {
+  display: flex;
+  gap: 8px;
+}
+
+.add-moderator-form input {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+
+.moderators-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.moderators-empty-placeholder {
+  padding: 20px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.moderator-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  gap: 10px;
+  transition: border-color 0.15s;
+}
+
+.moderator-row.is-next-moderator {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.mod-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mod-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-mod-tag {
+  font-size: 0.68rem;
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-weight: 600;
+}
+
+.mod-row-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mod-count-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+.mod-count-stepper button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.mod-count-stepper button:hover {
+  color: var(--text-main);
+}
+
+.mod-count-label {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  min-width: 65px;
+  text-align: center;
+}
+
+.mod-count-label strong {
+  color: var(--text-main);
+}
+
+.import-moderators-box {
+  padding: 10px 14px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.import-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.import-moderators-row {
+  display: flex;
+  gap: 8px;
+}
+
+.form-select-sm {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+
+

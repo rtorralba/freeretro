@@ -123,7 +123,17 @@ El estado de una sesión es un objeto JSON serializable almacenado bajo la clave
       updatedAt: 1730000000000,
       deleted: false
     }
-  }
+  },
+  moderators: [
+    {
+      id: "mod-xxxx",
+      name: "Nombre del compañero",
+      count: 2, // Número de sesiones que ha moderado
+      isNext: true, // Seleccionado/a para moderar la siguiente retro
+      updatedAt: 1730000000000,
+      deleted: false
+    }
+  ]
 }
 ```
 
@@ -206,10 +216,31 @@ Para garantizar 100% de disponibilidad en GitHub Pages sin sufrir límites de pe
 
 ---
 
-## 8. Registro de Cambios
+## 8. Sistema de Rotación y Elección de Moderadores
+
+Para asegurar que la facilitación de las retrospectivas se reparta de forma justa y equitativa entre todos los miembros del equipo:
+
+1. **Gestión de candidatos y conteo:**
+   - La sesión almacena la colección `moderators` con `{ id, name, count, isNext, updatedAt, deleted }`.
+   - Cada miembro del equipo tiene asociado el número de veces que ha sido moderador (`count`).
+   - Se pueden añadir nuevos miembros, incrementar/decrementar su contador y eliminarlos lógicamente.
+2. **Elección del próximo moderador:**
+   - En cualquier momento (o durante la fase final de acciones), se puede marcar a un compañero con `isNext: true`.
+   - Se muestra un distintivo visible en la barra superior (`🎤 Moderador: [Nombre]`) y un banner informativo para todo el equipo sincronizado en tiempo real.
+3. **Sugerencia inteligente de equidad:**
+   - El botón *"✨ Sugerir próximo"* selecciona automáticamente a la persona activa que menos sesiones ha moderado hasta la fecha.
+4. **Importación y continuidad entre tableros:**
+   - **Al crear una nueva sesión:** Al seleccionar una sesión anterior en el formulario de inicio (o al pulsar *"Continuar Acciones y Moderación"* en el historial), la nueva sesión hereda la lista del equipo y sus conteos acumulados con `isNext` reseteado a `false` para elegir al nuevo moderador.
+   - **En caliente desde el modal:** Dentro de cualquier sala activa se puede importar la lista desde cualquier sesión previa guardada en el navegador.
+   - **Exportación:** El resumen exportado en Markdown incluye una sección con el próximo moderador designado y la tabla de facilitaciones acumuladas.
+
+---
+
+## 9. Registro de Cambios
 
 Añade aquí una entrada por cada tarea (la más reciente arriba).
 
+- **2026-11-13** — Sistema de rotación y elección de moderadores: gestión de candidatos con conteo de sesiones facilitadas para rotación equitativa, selección del próximo moderador con indicador reactivo en barra y banner, sugerencia automática del miembro con menos sesiones, importación desde sesiones anteriores (al crear sala o en caliente desde el modal), sincronización CRDT LWW y exportación a Markdown.
 - **2026-11-13** — Automatización con Git Hook pre-push: añadido `.githooks/pre-push` y configurado `core.hooksPath .githooks` para validar automáticamente sintaxis y pasar los 12 tests antes de cualquier `git push`.
 - **2026-11-13** — Concurrencia y edición simultánea multi-usuario: preservación activa de borradores y foco en formularios durante repintados remotos, protección de Drag & Drop contra ráfagas de sincronización, mitigación de tormenta de señalización O(N^2) mediante respuestas directas a inboxes privados en WSS/MQTT, desduplicación de paquetes multicanal (WSS + WebRTC) y creación de suite de tests unitarios y de estrés (12 tests automatizados con runner nativo de Node.js).
 - **2026-11-06** — Añadidos `start.sh` y `start.bat` para arrancar un servidor local (puerto 8080 por defecto).
@@ -217,7 +248,7 @@ Añade aquí una entrada por cada tarea (la más reciente arriba).
 
 ---
 
-## 9. Verificación de Código y Tests de Concurrencia
+## 10. Verificación de Código y Tests de Concurrencia
 
 El repositorio incluye un Git hook pre-push (`.githooks/pre-push`) que ejecuta automáticamente estas comprobaciones antes de permitir cualquier `git push`.
 

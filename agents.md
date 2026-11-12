@@ -36,7 +36,9 @@ Este documento define la arquitectura, el modelo de datos, los motores de sincro
 | `js/storage.js` | Modelo de datos, colecciones de plantillas (`TEMPLATES`), catálogo de avatares (`AVATARS`), persistencia en `localStorage`, motor de fusión CRDT (`mergeSessions`), compresión URL (`encodePayloadToUrl` / `decodePayloadFromUrl`) y exportación a Markdown/JSON. |
 | `js/sync.js` | Motor de sincronización multicanal (`RetroSyncEngine`): canal instantáneo local (`BroadcastChannel`), pub/sub en tiempo real multi-red vía WebSockets MQTT (`broker.emqx.io` / `broker.hivemq.com`) y WebRTC nativo (`RTCPeerConnection` / `RTCDataChannel`). |
 | `js/audio.js` | Sintetizador de música relajante procedural CC0 (`AmbientMusicEngine`) basado en Web Audio API (pads ambientales, cuencos y lluvia suave, sin archivos externos ni licencias). |
-| `js/app.js` | Controlador principal (`FreeRetroApp`): enrutamiento por hash URL, renderizado reactivo del DOM, Drag & Drop de tarjetas, temporizador sincronizado, control de música y modal de avatar/perfil. |
+| `js/app.js` | Controlador principal (`FreeRetroApp`): enrutamiento por hash URL, renderizado reactivo del DOM con preservación de foco/borradores, Drag & Drop de tarjetas protegido contra concurrencia, temporizador sincronizado, control de música y modal de avatar/perfil. |
+| `tests/storage.test.js` | Suite de pruebas unitarias para el modelo de datos, compresión y motor CRDT `mergeSessions`. |
+| `tests/concurrency.test.js` | Pruebas de estrés y concurrencia multi-usuario (10 pares simultáneos, votación concurrente, resolución LWW y commutatividad). |
 | `agents.md` | Guía de arquitectura, modelos y protocolo de documentación continua para agentes de IA. |
 | `README.md` | Guía para usuarios finales, características y despliegue en GitHub Pages. |
 
@@ -129,6 +131,13 @@ El estado de una sesión es un objeto JSON serializable almacenado bajo la clave
    - Usa siempre `this.updateSession(mutatorFn)` en `FreeRetroApp`.
 3. **Metadatos iniciales (`createSessionFromInitMetadata`):**
    - Cuando una sala se inicializa desde el enlace `&init=`, sus timestamps iniciales se fijan en `1` para que cualquier cambio posterior hecho en vivo tenga prioridad al fusionar con `mergeSessions()`.
+4. **Detección de diferencias (`hasSessionDifferences`):**
+   - Antes de escribir en disco (`saveSession`) o actualizar el árbol DOM (`renderBoard`), se valida si el estado resultante difiere de la sesión actual. Si no hay cambios reales, se descartan operaciones redundantes, evitando ciclos de CPU y re-renderizados innecesarios.
+5. **Preservación activa de borradores y foco durante ediciones concurrentes:**
+   - Cuando varios usuarios añaden o modifican tarjetas al mismo tiempo, el motor de UI en `js/app.js` recolecta antes de cada repintado los textos sin enviar de `.add-card-form`, `.edit-card-form` y `.add-comment-form`, junto con la posición del cursor (`selectionStart`/`selectionEnd`) y el elemento enfocado (`document.activeElement`).
+   - Tras el repintado, los borradores y el foco se restauran instantáneamente, evitando que la escritura en progreso de un participante se borre o se interrumpa cuando un compañero envía una tarjeta o vota.
+6. **Protección de Drag & Drop durante ráfagas de sincronización:**
+   - Si llega una actualización remota mientras un usuario arrastra una tarjeta (`draggedCardId !== null`), el repintado se difiere a `dragend` (`pendingRenderAfterDrag`), evitando la rotura del arrastre nativo en HTML5.
 
 ---
 
@@ -142,6 +151,11 @@ Para garantizar 100% de disponibilidad en GitHub Pages sin sufrir límites de pe
    - Permite descubrimiento de sala, paso de mensajes de estado (`STATE_UPDATE`) y latidos (`PEER_ANNOUNCE`) entre navegadores y dispositivos en cualquier red sin necesidad de servidor propio ni registros.
 3. **WebRTC Nativo (`RTCPeerConnection` + `RTCDataChannel`)**:
    - Utiliza el canal WSS como señalización ligera para abrir canales de datos P2P directos entre los pares conectados.
+
+### Mecanismos de protección contra tormentas y carreras:
+- **Respuesta directa a `SYNC_FULL` dirigida al buzón privado del solicitante**: Al unirse un nuevo participante, los participantes existentes envían su estado completo de respuesta directamente a `freeretro/v1/signal/${roomId}/${requesterNodeId}`, en lugar de publicar a todo el canal general `roomTopic`. Esto erradica por completo la tormenta de mensajes de orden $O(N^2)$ al unirse múltiples pares.
+- **Desduplicación de paquetes multicanal (`seenMessageIds`)**: Cada mensaje porta un identificador único `msgId`. Al recibirse por WebRTC y por WSS de manera duplicada, el duplicado se descarta inmediatamente en memoria (historial limitado a 500 IDs).
+- **Agrupamiento y throttling de envíos (`broadcastThrottleTimer`)**: Las mutaciones sucesivas rápidas (p. ej. ráfagas de votos) se agrupan en una ventana de 50 ms para no saturar los relays públicos.
 
 ### Tipos de Mensajes:
 - `SYNC_FULL`: Intercambio del estado completo de la sesión y perfil del usuario al conectarse.
@@ -169,10 +183,14 @@ Para garantizar 100% de disponibilidad en GitHub Pages sin sufrir límites de pe
 
 ---
 
-## 7. Verificación de Código
+## 7. Verificación de Código y Tests de Concurrencia
 
-Antes de finalizar cualquier tarea o commit, valida la sintaxis de todos los módulos JavaScript con Node:
+Antes de finalizar cualquier tarea o commit, valida la sintaxis de todos los módulos JavaScript y ejecuta la suite de pruebas unitarias y de concurrencia con el runner nativo de Node.js:
 
 ```powershell
+# 1. Comprobación estática de sintaxis en todos los módulos ES
 node --check js/storage.js; node --check js/sync.js; node --check js/audio.js; node --check js/app.js
+
+# 2. Ejecución de la suite completa de pruebas unitarias y de concurrencia CRDT
+node --test tests/*.test.js
 ```

@@ -267,7 +267,91 @@ export function mergeSessions(local, remote) {
     }
   }
 
+  // Ensure overall session updatedAt reflects the newest component timestamp
+  for (const c of Object.values(merged.cards || {})) {
+    if ((c.updatedAt || 0) > (merged.updatedAt || 0)) {
+      merged.updatedAt = c.updatedAt;
+    }
+  }
+
   return merged;
+}
+
+/**
+ * Checks if two sessions have any meaningful structural or state differences.
+ * Used to avoid redundant re-renders, disk saves, and UI flickering.
+ */
+export function hasSessionDifferences(a, b) {
+  if (a === b) return false;
+  if (!a || !b) return true;
+
+  if (a.updatedAt !== b.updatedAt) return true;
+  if (a.title !== b.title || a.sprint !== b.sprint || a.coordinatorId !== b.coordinatorId) return true;
+
+  // Settings
+  const as = a.settings || {}, bs = b.settings || {};
+  if (as.phase !== bs.phase || as.cardsBlurred !== bs.cardsBlurred || as.maxVotes !== bs.maxVotes || as.anonymousCards !== bs.anonymousCards || as.updatedAt !== bs.updatedAt) {
+    return true;
+  }
+
+  // Timer
+  const at = a.timer || {}, bt = b.timer || {};
+  if (at.running !== bt.running || at.endsAt !== bt.endsAt || at.durationSec !== bt.durationSec || at.updatedAt !== bt.updatedAt) {
+    return true;
+  }
+
+  // Music
+  const am = a.music || {}, bm = b.music || {};
+  if (am.playing !== bm.playing || am.style !== bm.style || am.updatedAt !== bm.updatedAt) {
+    return true;
+  }
+
+  // Columns
+  const ac = a.columns || [], bc = b.columns || [];
+  if (ac.length !== bc.length) return true;
+  for (let i = 0; i < ac.length; i++) {
+    const c1 = ac[i], c2 = bc[i];
+    if (c1.id !== c2.id || c1.title !== c2.title || c1.order !== c2.order || c1.deleted !== c2.deleted || c1.updatedAt !== c2.updatedAt) {
+      return true;
+    }
+  }
+
+  // Cards
+  const ak = a.cards || {}, bk = b.cards || {};
+  const aKeys = Object.keys(ak);
+  const bKeys = Object.keys(bk);
+  if (aKeys.length !== bKeys.length) return true;
+
+  for (const k of aKeys) {
+    const c1 = ak[k], c2 = bk[k];
+    if (!c2) return true;
+    if (c1.updatedAt !== c2.updatedAt || c1.deleted !== c2.deleted || c1.columnId !== c2.columnId ||
+        c1.text !== c2.text || c1.done !== c2.done || c1.Assignee !== c2.Assignee) {
+      return true;
+    }
+
+    // Votes
+    const v1 = c1.votes || {}, v2 = c2.votes || {};
+    const v1k = Object.keys(v1), v2k = Object.keys(v2);
+    if (v1k.length !== v2k.length) return true;
+    for (const vk of v1k) {
+      if ((v1[vk]?.count || 0) !== (v2[vk]?.count || 0) || (v1[vk]?.updatedAt || 0) !== (v2[vk]?.updatedAt || 0)) {
+        return true;
+      }
+    }
+
+    // Comments
+    const cm1 = c1.comments || {}, cm2 = c2.comments || {};
+    const cm1k = Object.keys(cm1), cm2k = Object.keys(cm2);
+    if (cm1k.length !== cm2k.length) return true;
+    for (const cmk of cm1k) {
+      if ((cm1[cmk]?.text !== cm2[cmk]?.text) || (cm1[cmk]?.deleted !== cm2[cmk]?.deleted) || (cm1[cmk]?.updatedAt !== cm2[cmk]?.updatedAt)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**

@@ -13,6 +13,11 @@ Aplicación web 100% estática (HTML, CSS y ES Modules) para realizar retrospect
 2. **Colaboración en tiempo real Multicanal (WebSockets WSS + WebRTC + BroadcastChannel + CRDT)**:
    - Conexión instantánea entre diferentes navegadores y redes mediante canal pub/sub WSS y WebRTC nativo (sin sufrir límites `429`).
    - Un motor **CRDT (Last-Write-Wins Element Set)** fusiona automáticamente todas las tarjetas que cada persona preparó antes con las creadas en directo, sin perder ni sobrescribir nada.
+   - **Edición concurrente ultra-robusta**:
+     - **Preservación activa de borradores y foco**: Escribir en cualquier tarjeta o comentario nunca se interrumpe ni pierde el texto cuando otros compañeros envían notas o votan al mismo tiempo.
+     - **Respuestas directas punto a punto**: Mitigación de tormentas de difusión masiva ($O(N^2)$) cuando múltiples usuarios entran a la sala a la vez.
+     - **Detección inteligente de diferencias**: Se descartan repintados del DOM si la sesión remota no trae cambios reales, optimizando el rendimiento.
+     - **Protección de Drag & Drop**: Mover tarjetas no se rompe si llega una ráfaga de cambios remotos.
 3. **Música ambiental relajante integrada (CC0 / Dominio Público)**:
    - Sintetizador procedural en tiempo real mediante **Web Audio API** (`🎵 Zen`, `🥣 Cuencos`, `🌧️ Lluvia`).
    - Sin archivos externos ni licencias de audio; controlable por cualquier participante y con opción de silenciarla individualmente.
@@ -62,3 +67,13 @@ python -m http.server 8080
 ```
 
 Abre `http://localhost:8080` en dos navegadores o pestañas distintas para ver la sincronización en tiempo real.
+
+---
+
+## 🧪 Tests automatizados de concurrencia y CRDT
+
+El proyecto incluye tests unitarios y de estrés de concurrencia usando el test runner nativo de Node.js (sin dependencias externas ni `npm install`):
+
+```bash
+node --test tests/*.test.js
+```

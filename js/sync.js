@@ -48,6 +48,8 @@ export class RetroSyncEngine {
     this.broadcastChannel = null;
     this.destroyed = false;
     this.heartbeatTimer = null;
+    this.broadcastThrottleTimer = null;
+    this.seenMessageIds = new Set();
 
     this.registerSelfPeer();
   }
@@ -171,7 +173,11 @@ export class RetroSyncEngine {
           if (!msg || msg.user?.nodeId === this.nodeId) return;
 
           if (topic === this.signalTopic) {
-            this.handleWebRtcSignal(msg);
+            if (msg.type === 'SYNC_FULL' || msg.type === 'STATE_UPDATE') {
+              this.handleIncomingMessage(msg, true);
+            } else {
+              this.handleWebRtcSignal(msg);
+            }
           } else if (topic === this.roomTopic) {
             this.handleIncomingMessage(msg, true);
           }
@@ -329,6 +335,16 @@ export class RetroSyncEngine {
   handleIncomingMessage(msg, fromWss = false) {
     if (!msg || !msg.type) return;
 
+    // Deduplicate identical message received over multiple channels (e.g. WSS + WebRTC)
+    if (msg.msgId) {
+      if (this.seenMessageIds.has(msg.msgId)) return;
+      this.seenMessageIds.add(msg.msgId);
+      if (this.seenMessageIds.size > 500) {
+        const first = this.seenMessageIds.values().next().value;
+        this.seenMessageIds.delete(first);
+      }
+    }
+
     if (msg.user && msg.user.id && msg.user.id !== this.userProfile.id) {
       this.peersInfo.set(msg.user.id, {
         ...msg.user,
@@ -351,12 +367,18 @@ export class RetroSyncEngine {
       if (msg.type === 'SYNC_FULL' && !msg.isReply) {
         const reply = {
           type: 'SYNC_FULL',
+          msgId: `${this.nodeId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           isReply: true,
           user: this.getSelfUserPayload(),
           session: this.getLocalSession()
         };
         if (fromWss) {
-          this.publishWss(this.roomTopic, reply);
+          if (msg.user?.nodeId) {
+            // Reply directly to requester's private inbox to eliminate room broadcast storms!
+            this.publishWss(`freeretro/v1/signal/${this.roomId}/${msg.user.nodeId}`, reply);
+          } else {
+            this.publishWss(this.roomTopic, reply);
+          }
         } else if (this.broadcastChannel) {
           this.broadcastChannel.postMessage(reply);
         }
@@ -364,17 +386,34 @@ export class RetroSyncEngine {
     }
   }
 
-  broadcastState() {
-    const payload = {
-      type: 'STATE_UPDATE',
-      user: this.getSelfUserPayload(),
-      session: this.getLocalSession()
+  broadcastState(immediate = false) {
+    clearTimeout(this.broadcastThrottleTimer);
+    const send = () => {
+      if (this.destroyed) return;
+      const payload = {
+        type: 'STATE_UPDATE',
+        msgId: `${this.nodeId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        user: this.getSelfUserPayload(),
+        session: this.getLocalSession()
+      };
+      this.broadcastMessage(payload);
     };
-    this.broadcastMessage(payload);
+
+    if (immediate) {
+      send();
+    } else {
+      // 50ms coalescing throttle to bundle rapid mutations and prevent broker flooding
+      this.broadcastThrottleTimer = setTimeout(send, 50);
+    }
   }
 
   broadcastMessage(payload) {
     if (this.destroyed) return;
+
+    if (!payload.msgId) {
+      payload.msgId = `${this.nodeId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    }
+    this.seenMessageIds.add(payload.msgId);
 
     // 1. Same-browser tabs
     if (this.broadcastChannel) {
@@ -439,6 +478,7 @@ export class RetroSyncEngine {
 
   destroy() {
     this.destroyed = true;
+    clearTimeout(this.broadcastThrottleTimer);
     if (this.unloadHandler) {
       window.removeEventListener('beforeunload', this.unloadHandler);
       this.unloadHandler = null;

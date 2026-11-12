@@ -20,7 +20,8 @@ import {
   createInitMetadata,
   createSessionFromInitMetadata,
   exportSessionToMarkdown,
-  getCardVoteCount
+  getCardVoteCount,
+  hasSessionDifferences
 } from './storage.js';
 
 import { RetroSyncEngine } from './sync.js';
@@ -40,6 +41,7 @@ class FreeRetroApp {
     this.openCommentCards = new Set();
     this.editingCardId = null;
     this.draggedCardId = null;
+    this.pendingRenderAfterDrag = false;
     this.historySearchQuery = '';
 
     this.init();
@@ -195,9 +197,17 @@ class FreeRetroApp {
       userProfile: this.user,
       getLocalSession: () => this.currentSession,
       onRemoteState: (remoteSession) => {
-        this.currentSession = mergeSessions(this.currentSession, remoteSession);
+        const merged = mergeSessions(this.currentSession, remoteSession);
+        if (!hasSessionDifferences(this.currentSession, merged)) {
+          return;
+        }
+        this.currentSession = merged;
         saveSession(this.currentSession);
-        this.renderBoard();
+        if (this.draggedCardId) {
+          this.pendingRenderAfterDrag = true;
+        } else {
+          this.renderBoard();
+        }
       },
       onPeersChange: (peersList) => {
         this.peers = peersList;
@@ -412,6 +422,60 @@ class FreeRetroApp {
     const columnsContainer = document.getElementById('board-columns');
     if (!columnsContainer) return;
 
+    // Capture unsubmitted drafts and user focus before DOM rebuild
+    const activeEl = document.activeElement;
+    const drafts = [];
+
+    columnsContainer.querySelectorAll('form.add-card-form, form.edit-card-form, form.add-comment-form').forEach(form => {
+      if (form.classList.contains('add-card-form')) {
+        const colId = form.dataset.colId;
+        const textarea = form.querySelector('textarea[name="cardText"]');
+        const assigneeInput = form.querySelector('input[name="assignee"]');
+        const textVal = textarea ? textarea.value : '';
+        const assigneeVal = assigneeInput ? assigneeInput.value : '';
+        if (textVal || assigneeVal || activeEl === textarea || activeEl === assigneeInput) {
+          drafts.push({
+            type: 'add-card',
+            colId,
+            textVal,
+            assigneeVal,
+            isFocused: activeEl === textarea ? 'textarea' : (activeEl === assigneeInput ? 'assignee' : null),
+            selectionStart: activeEl === textarea ? textarea.selectionStart : 0,
+            selectionEnd: activeEl === textarea ? textarea.selectionEnd : 0
+          });
+        }
+      } else if (form.classList.contains('edit-card-form')) {
+        const cardId = form.dataset.cardId;
+        const textarea = form.querySelector('textarea[name="editText"]');
+        const assigneeInput = form.querySelector('input[name="editAssignee"]');
+        const textVal = textarea ? textarea.value : '';
+        const assigneeVal = assigneeInput ? assigneeInput.value : '';
+        drafts.push({
+          type: 'edit-card',
+          cardId,
+          textVal,
+          assigneeVal,
+          isFocused: activeEl === textarea ? 'textarea' : (activeEl === assigneeInput ? 'assignee' : null),
+          selectionStart: activeEl === textarea ? textarea.selectionStart : 0,
+          selectionEnd: activeEl === textarea ? textarea.selectionEnd : 0
+        });
+      } else if (form.classList.contains('add-comment-form')) {
+        const cardId = form.dataset.cardId;
+        const input = form.querySelector('input[name="commentText"]');
+        const textVal = input ? input.value : '';
+        if (textVal || activeEl === input) {
+          drafts.push({
+            type: 'add-comment',
+            cardId,
+            textVal,
+            isFocused: activeEl === input,
+            selectionStart: activeEl === input ? input.selectionStart : 0,
+            selectionEnd: activeEl === input ? input.selectionEnd : 0
+          });
+        }
+      }
+    });
+
     const activeColumns = (s.columns || [])
       .filter(c => !c.deleted)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -468,6 +532,49 @@ class FreeRetroApp {
         </section>
       `;
     }).join('');
+
+    // Restore unsubmitted drafts and user focus seamlessly
+    drafts.forEach(draft => {
+      if (draft.type === 'add-card') {
+        const form = columnsContainer.querySelector(`form.add-card-form[data-col-id="${draft.colId}"]`);
+        if (form) {
+          const textarea = form.querySelector('textarea[name="cardText"]');
+          const assigneeInput = form.querySelector('input[name="assignee"]');
+          if (textarea && draft.textVal) textarea.value = draft.textVal;
+          if (assigneeInput && draft.assigneeVal) assigneeInput.value = draft.assigneeVal;
+          if (draft.isFocused === 'textarea' && textarea) {
+            textarea.focus();
+            try { textarea.setSelectionRange(draft.selectionStart, draft.selectionEnd); } catch (e) {}
+          } else if (draft.isFocused === 'assignee' && assigneeInput) {
+            assigneeInput.focus();
+          }
+        }
+      } else if (draft.type === 'edit-card') {
+        const form = columnsContainer.querySelector(`form.edit-card-form[data-card-id="${draft.cardId}"]`);
+        if (form) {
+          const textarea = form.querySelector('textarea[name="editText"]');
+          const assigneeInput = form.querySelector('input[name="editAssignee"]');
+          if (textarea && draft.textVal) textarea.value = draft.textVal;
+          if (assigneeInput && draft.assigneeVal) assigneeInput.value = draft.assigneeVal;
+          if (draft.isFocused === 'textarea' && textarea) {
+            textarea.focus();
+            try { textarea.setSelectionRange(draft.selectionStart, draft.selectionEnd); } catch (e) {}
+          } else if (draft.isFocused === 'assignee' && assigneeInput) {
+            assigneeInput.focus();
+          }
+        }
+      } else if (draft.type === 'add-comment') {
+        const form = columnsContainer.querySelector(`form.add-comment-form[data-card-id="${draft.cardId}"]`);
+        if (form) {
+          const input = form.querySelector('input[name="commentText"]');
+          if (input && draft.textVal) input.value = draft.textVal;
+          if (draft.isFocused && input) {
+            input.focus();
+            try { input.setSelectionRange(draft.selectionStart, draft.selectionEnd); } catch (e) {}
+          }
+        }
+      }
+    });
   }
 
   renderCardHtml(card, col, isBlurred) {
@@ -1214,6 +1321,8 @@ class FreeRetroApp {
         if (!text) return;
 
         const assignee = assigneeInput ? assigneeInput.value.trim() : '';
+        if (textInput) textInput.value = '';
+        if (assigneeInput) assigneeInput.value = '';
         this.updateSession(s => {
           const id = generateId('card');
           s.cards[id] = {
@@ -1270,6 +1379,7 @@ class FreeRetroApp {
         const text = input?.value.trim();
         if (!text) return;
 
+        if (input) input.value = '';
         this.updateSession(s => {
           const card = s.cards[cardId];
           if (!card) return;
@@ -1312,6 +1422,10 @@ class FreeRetroApp {
       cardEl?.classList.remove('dragging');
       document.querySelectorAll('.cards-list.drag-over').forEach(el => el.classList.remove('drag-over'));
       this.draggedCardId = null;
+      if (this.pendingRenderAfterDrag) {
+        this.pendingRenderAfterDrag = false;
+        this.renderBoard();
+      }
     });
 
     document.addEventListener('dragover', (e) => {

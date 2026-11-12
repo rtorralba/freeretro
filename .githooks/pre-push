@@ -1,0 +1,25 @@
+#!/bin/sh
+# FreeRetro pre-push hook
+# Valida la sintaxis de todos los módulos JavaScript y ejecuta los tests unitarios y de concurrencia antes de pushear.
+
+echo "🔍 [pre-push] Verificando sintaxis JavaScript..."
+node --check js/storage.js && \
+node --check js/sync.js && \
+node --check js/audio.js && \
+node --check js/app.js
+
+if [ $? -ne 0 ]; then
+  echo "❌ [pre-push] Fallo en la comprobación de sintaxis. Push cancelado."
+  exit 1
+fi
+
+echo "🧪 [pre-push] Ejecutando suite de tests unitarios y de concurrencia..."
+node --test tests/*.test.js
+
+if [ $? -ne 0 ]; then
+  echo "❌ [pre-push] Los tests han fallado. Push cancelado."
+  exit 1
+fi
+
+echo "✅ [pre-push] Verificación completada con éxito. Continuando con el push..."
+exit 0

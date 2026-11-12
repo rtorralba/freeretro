@@ -40,6 +40,7 @@ Este documento define la arquitectura, el modelo de datos, los motores de sincro
 | `js/audio.js` | Sintetizador de música relajante procedural CC0 (`AmbientMusicEngine`) basado en Web Audio API (pads ambientales, cuencos y lluvia suave, sin archivos externos ni licencias). |
 | `js/app.js` | Controlador principal (`FreeRetroApp`): enrutamiento por hash URL, renderizado reactivo del DOM con preservación de foco/borradores, Drag & Drop de tarjetas protegido contra concurrencia, temporizador sincronizado, control de música y modal de avatar/perfil. |
 | `start.sh` / `start.bat` | Scripts de arranque de un servidor web local estático (Linux/macOS y Windows). Usan `python3`/`py`/`python` (`http.server`) y, si no hay Python, `npx http-server`. Puerto por defecto 8080, configurable como primer argumento. |
+| `.githooks/pre-push` | Hook de Git para ejecutar automáticamente la comprobación de sintaxis y los tests antes de cada `git push`. |
 | `tests/storage.test.js` | Suite de pruebas unitarias para el modelo de datos, compresión y motor CRDT `mergeSessions`. |
 | `tests/concurrency.test.js` | Pruebas de estrés y concurrencia multi-usuario (10 pares simultáneos, votación concurrente, resolución LWW y commutatividad). |
 | `agents.md` | Guía de arquitectura, modelos y protocolo de documentación continua para agentes de IA. |
@@ -209,6 +210,7 @@ Para garantizar 100% de disponibilidad en GitHub Pages sin sufrir límites de pe
 
 Añade aquí una entrada por cada tarea (la más reciente arriba).
 
+- **2026-11-13** — Automatización con Git Hook pre-push: añadido `.githooks/pre-push` y configurado `core.hooksPath .githooks` para validar automáticamente sintaxis y pasar los 12 tests antes de cualquier `git push`.
 - **2026-11-13** — Concurrencia y edición simultánea multi-usuario: preservación activa de borradores y foco en formularios durante repintados remotos, protección de Drag & Drop contra ráfagas de sincronización, mitigación de tormenta de señalización O(N^2) mediante respuestas directas a inboxes privados en WSS/MQTT, desduplicación de paquetes multicanal (WSS + WebRTC) y creación de suite de tests unitarios y de estrés (12 tests automatizados con runner nativo de Node.js).
 - **2026-11-06** — Añadidos `start.sh` y `start.bat` para arrancar un servidor local (puerto 8080 por defecto).
 - **2026-11-06** — Plantilla `classic`: la columna "Dejar de hacer" pasa a ser **Ideas** (mismo id `col-stop`, nuevo subtítulo, icono `lightbulb`). Subtítulo de "Empezar a hacer" cambiado a "Prácticas o hábitos que queremos incorporar" para evitar solaparse con Ideas. Actualizados el nombre de la plantilla (`js/storage.js`, `index.html`) y `README.md`. Documentada la semántica de columnas (sección 7) y reforzada la regla de documentar todos los cambios.
@@ -217,7 +219,9 @@ Añade aquí una entrada por cada tarea (la más reciente arriba).
 
 ## 9. Verificación de Código y Tests de Concurrencia
 
-Antes de finalizar cualquier tarea o commit, valida la sintaxis de todos los módulos JavaScript y ejecuta la suite de pruebas unitarias y de concurrencia con el runner nativo de Node.js:
+El repositorio incluye un Git hook pre-push (`.githooks/pre-push`) que ejecuta automáticamente estas comprobaciones antes de permitir cualquier `git push`.
+
+Para validarlo manualmente antes de finalizar cualquier tarea o commit:
 
 ```powershell
 # 1. Comprobación estática de sintaxis en todos los módulos ES

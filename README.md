@@ -85,3 +85,9 @@ El proyecto incluye tests unitarios y de estrés de concurrencia usando el test 
 ```bash
 node --test tests/*.test.js
 ```
+
+Además, el repositorio cuenta con un hook pre-push (`.githooks/pre-push`) para ejecutar automáticamente estas comprobaciones y prevenir subidas con errores:
+
+```bash
+git config core.hooksPath .githooks
+```

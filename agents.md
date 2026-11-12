@@ -8,6 +8,8 @@ Este documento define la arquitectura, el modelo de datos, los motores de sincro
 
 > **TODA MODIFICACIÓN, NUEVA CARACTERÍSTICA O AJUSTE ARQUITECTÓNICO QUE REALICE LA IA DEBE QUEDAR REGISTRADO Y DOCUMENTADO EXPLÍCITAMENTE EN ESTE ARCHIVO (`AGENTS.md`) Y EN `README.md` (SI AFECTA AL USUARIO FINAL).**
 >
+> **Esto incluye cualquier cambio, por pequeño que sea (textos, nombres de columnas, iconos, estilos).** Además de describir el cambio en la sección correspondiente, hay que añadir una entrada al **Registro de Cambios** (sección 8) en la misma tarea, antes de darla por terminada.
+>
 > Ningún cambio funcional, de modelo de datos, de dependencias o de transporte P2P puede darse por finalizado sin actualizar la documentación correspondiente en este documento.
 
 ---
@@ -37,6 +39,7 @@ Este documento define la arquitectura, el modelo de datos, los motores de sincro
 | `js/sync.js` | Motor de sincronización multicanal (`RetroSyncEngine`): canal instantáneo local (`BroadcastChannel`), pub/sub en tiempo real multi-red vía WebSockets MQTT (`broker.emqx.io` / `broker.hivemq.com`) y WebRTC nativo (`RTCPeerConnection` / `RTCDataChannel`). |
 | `js/audio.js` | Sintetizador de música relajante procedural CC0 (`AmbientMusicEngine`) basado en Web Audio API (pads ambientales, cuencos y lluvia suave, sin archivos externos ni licencias). |
 | `js/app.js` | Controlador principal (`FreeRetroApp`): enrutamiento por hash URL, renderizado reactivo del DOM con preservación de foco/borradores, Drag & Drop de tarjetas protegido contra concurrencia, temporizador sincronizado, control de música y modal de avatar/perfil. |
+| `start.sh` / `start.bat` | Scripts de arranque de un servidor web local estático (Linux/macOS y Windows). Usan `python3`/`py`/`python` (`http.server`) y, si no hay Python, `npx http-server`. Puerto por defecto 8080, configurable como primer argumento. |
 | `tests/storage.test.js` | Suite de pruebas unitarias para el modelo de datos, compresión y motor CRDT `mergeSessions`. |
 | `tests/concurrency.test.js` | Pruebas de estrés y concurrencia multi-usuario (10 pares simultáneos, votación concurrente, resolución LWW y commutatividad). |
 | `agents.md` | Guía de arquitectura, modelos y protocolo de documentación continua para agentes de IA. |
@@ -183,7 +186,36 @@ Para garantizar 100% de disponibilidad en GitHub Pages sin sufrir límites de pe
 
 ---
 
-## 7. Verificación de Código y Tests de Concurrencia
+## 7. Plantillas y Semántica de Columnas
+
+- Las columnas **indican el tipo de tarjeta**. Las tarjetas **no fluyen de una columna a otra** como en un kanban (aunque se pueden arrastrar entre columnas para reclasificarlas) y no se "terminan" en las columnas normales.
+- Solo la columna con `isActionColumn: true` (**Plan de Acción**) tiene el estado `done` (checkbox de completada) y asignado (`Assignee`). Desde cualquier tarjeta se puede crear un **accionable**, que se añade en esa columna.
+- Plantilla `classic` (`TEMPLATES.classic` en `js/storage.js`), con estas columnas:
+
+| Id | Título | Subtítulo | Color | Icono |
+| :--- | :--- | :--- | :--- | :--- |
+| `col-facts` | Hechos | Datos, hitos o eventos objetivos del sprint | sky | info |
+| `col-keep` | Seguir haciendo | Lo que funciona bien y debemos mantener | emerald | check-circle |
+| `col-stop` | **Ideas** | Propuestas y ocurrencias para mejorar | rose | lightbulb |
+| `col-start` | Empezar a hacer | Prácticas o hábitos que queremos incorporar | amber | sparkles |
+| `col-kudos` | Agradecimientos | Reconocimientos y gracias a compañeros | pink | heart |
+| `col-actions` | Plan de Acción | Compromisos concretos para el próximo sprint | indigo | target |
+
+- **Nota:** el id `col-stop` se conserva aunque el título sea ahora "Ideas" (antes "Dejar de hacer"), para no romper sesiones ya guardadas ni enlaces existentes. No lo renombres.
+
+---
+
+## 8. Registro de Cambios
+
+Añade aquí una entrada por cada tarea (la más reciente arriba).
+
+- **2026-11-13** — Concurrencia y edición simultánea multi-usuario: preservación activa de borradores y foco en formularios durante repintados remotos, protección de Drag & Drop contra ráfagas de sincronización, mitigación de tormenta de señalización O(N^2) mediante respuestas directas a inboxes privados en WSS/MQTT, desduplicación de paquetes multicanal (WSS + WebRTC) y creación de suite de tests unitarios y de estrés (12 tests automatizados con runner nativo de Node.js).
+- **2026-11-06** — Añadidos `start.sh` y `start.bat` para arrancar un servidor local (puerto 8080 por defecto).
+- **2026-11-06** — Plantilla `classic`: la columna "Dejar de hacer" pasa a ser **Ideas** (mismo id `col-stop`, nuevo subtítulo, icono `lightbulb`). Subtítulo de "Empezar a hacer" cambiado a "Prácticas o hábitos que queremos incorporar" para evitar solaparse con Ideas. Actualizados el nombre de la plantilla (`js/storage.js`, `index.html`) y `README.md`. Documentada la semántica de columnas (sección 7) y reforzada la regla de documentar todos los cambios.
+
+---
+
+## 9. Verificación de Código y Tests de Concurrencia
 
 Antes de finalizar cualquier tarea o commit, valida la sintaxis de todos los módulos JavaScript y ejecuta la suite de pruebas unitarias y de concurrencia con el runner nativo de Node.js:
 
